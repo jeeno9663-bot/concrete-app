@@ -5,3 +5,4 @@ joblib
 openpyxl
 plotly
 numpy
+xlsxwriter
