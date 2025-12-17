@@ -49,15 +49,6 @@ st.markdown("""
         background-color: #34495e;
         transform: scale(1.02);
     }
-    
-    /* กล่องข้อความสูตร */
-    .formula-box {
-        background-color: #f8f9fa;
-        border-left: 5px solid #2c3e50;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-radius: 5px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -151,7 +142,7 @@ col_result, col_chart = st.columns([1.2, 1])
 if st.sidebar.button("🚀 คำนวณกำลังอัด"):
     
     with st.spinner('กำลังประมวลผล...'):
-        time.sleep(1)
+        time.sleep(0.5)
 
     input_data = pd.DataFrame([[cement, slag, flyash, water, superplastic, coarse, fine, age]],
                               columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 
@@ -208,63 +199,44 @@ if st.sidebar.button("🚀 คำนวณกำลังอัด"):
     st.plotly_chart(fig_stress, use_container_width=True)
     
     # =========================================================
-    # ส่วนที่เพิ่มใหม่: รายการคำนวณและสูตร (Calculation Sheet)
+    # ส่วนที่แก้ไข: ปรับปรุงรายการคำนวณให้สวยงาม (Official Look)
     # =========================================================
     st.markdown("---")
     st.header("📝 รายการคำนวณประกอบ (Calculation Sheet)")
     
-    with st.expander("คลิกเพื่อดูที่มาและสูตรการคำนวณ (Click to expand)", expanded=False):
+    # คำนวณค่าต่างๆ เตรียมไว้
+    total_binder = cement + slag + flyash
+    wb_ratio = water / total_binder if total_binder > 0 else 0
+    
+    with st.expander("แสดงรายละเอียดการคำนวณ (Click to expand)", expanded=True):
         
-        # 1. การคำนวณอัตราส่วน (Ratios)
-        st.markdown("#### 1. การตรวจสอบอัตราส่วนส่วนผสม (Mix Proportion Check)")
-        total_binder = cement + slag + flyash
-        if total_binder > 0:
-            wb_ratio = water / total_binder
-        else:
-            wb_ratio = 0
+        st.markdown("#### 1. การตรวจสอบส่วนผสม (Mix Proportion Check)")
+        
+        # กล่องคำนวณที่ 1
+        with st.container(border=True):
+            st.markdown("**1.1 ปริมาณวัสดุประสานรวม (Total Binder)**")
+            st.latex(r"Binder = Cement + Slag + FlyAsh")
+            st.latex(rf"Binder = {cement} + {slag} + {flyash} = {total_binder} \; \text{{kg}}/m^3")
             
-        st.markdown(f"""
-        <div class="formula-box">
-            <b>1.1 ปริมาณวัสดุประสานรวม (Total Binder):</b><br>
-            $$ Binder = Cement + Slag + FlyAsh $$ <br>
-            $$ Binder = {cement} + {slag} + {flyash} = {total_binder} \ kg/m^3 $$
-            <br><br>
-            <b>1.2 อัตราส่วนน้ำต่อวัสดุประสาน (w/b ratio):</b><br>
-            $$ w/b = \\frac{{Water}}{{Binder}} $$ <br>
-            $$ w/b = \\frac{{{water}}}{{{total_binder}}} = \\mathbf{{{wb_ratio:.3f}}} $$
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("**1.2 อัตราส่วนน้ำต่อวัสดุประสาน (w/b ratio)**")
+            st.latex(r"w/b = \frac{Water}{Binder}")
+            st.latex(rf"w/b = \frac{{{water}}}{{{total_binder}}} = \mathbf{{{wb_ratio:.3f}}}")
 
-        # 2. การแปลงหน่วย (Unit Conversion)
         st.markdown("#### 2. การแปลงหน่วยกำลังอัด (Unit Conversion)")
-        st.markdown(f"""
-        <div class="formula-box">
-            สูตรการแปลงหน่วยจาก MPa เป็น ksc (kg/cm²):<br>
-            $$ 1 \ MPa \\approx 10.197 \ ksc $$ <br>
-            $$ Strength_{{ksc}} = {pred_mpa:.2f} \\times 10.197 = \\mathbf{{{pred_ksc:.2f} \ ksc}} $$
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 3. ที่มาของกราฟ Stress-Strain (Hognestad)
-        st.markdown("#### 3. สมการจำลองพฤติกรรม (Simulation Model)")
-        st.markdown("""
-        กราฟความสัมพันธ์ Stress-Strain ถูกจำลองขึ้นโดยใช้สมการ **Hognestad's Parabola** ซึ่งเป็นแบบจำลองพฤติกรรมคอนกรีตมาตรฐาน:
-        """)
-        st.latex(r'''
-        f_c = f'_c \left[ \frac{2\epsilon}{\epsilon_0} - \left( \frac{\epsilon}{\epsilon_0} \right)^2 \right]
-        ''')
-        st.markdown("""
-        โดยที่:
-        * $f_c$ = หน่วยแรงที่ความเครียด $\epsilon$
-        * $f'_c$ = กำลังอัดสูงสุด (ค่าจาก AI Prediction)
-        * $\epsilon_0$ = ความเครียดที่จุดรับแรงสูงสุด (ใช้ค่า 0.002)
-        """)
         
-        # 4. หมายเหตุเกี่ยวกับ AI
-        st.info("""
-        **หมายเหตุ:** ค่ากำลังอัด ($f'_c$) ได้จากการทำนายด้วยโมเดลปัญญาประดิษฐ์ (Random Forest Regressor) 
-        ซึ่งประมวลผลจากรูปแบบข้อมูลสถิติกว่า 1,000 ตัวอย่าง ไม่ได้เกิดจากการคำนวณด้วยสูตรเส้นตรงเพียงสูตรเดียว
-        """)
+        # กล่องคำนวณที่ 2
+        with st.container(border=True):
+            st.markdown("สูตรการแปลงหน่วยจาก MPa เป็น ksc (โดยประมาณ):")
+            st.latex(r"1 \; \text{MPa} \approx 10.197 \; \text{ksc}")
+            st.latex(rf"\text{{Strength}}_{{ksc}} = {pred_mpa:.2f} \times 10.197 = \mathbf{{{pred_ksc:.2f} \; \text{{ksc}}}}")
+
+        st.markdown("#### 3. แบบจำลองพฤติกรรม (Simulation Model)")
+        
+        # กล่องคำนวณที่ 3
+        with st.container(border=True):
+            st.markdown("กราฟ Stress-Strain จำลองด้วยสมการ **Hognestad's Parabola**:")
+            st.latex(r"f_c = f'_c \left[ \frac{2\epsilon}{\epsilon_0} - \left( \frac{\epsilon}{\epsilon_0} \right)^2 \right]")
+            st.caption(f"*โดยใช้ค่ากำลังอัดสูงสุดจากการทำนาย (f'c) = {pred_ksc:.2f} ksc")
 
 else:
     st.info("👈 กรุณากดปุ่ม '🚀 คำนวณกำลังอัด' เพื่อเริ่มใช้งาน")
