@@ -140,7 +140,7 @@ with st.sidebar:
     # --- เพิ่มโลโก้ตรงนี้ ---
     try:
         # โหลดภาพโลโก้ (ตรวจสอบให้แน่ใจว่าชื่อไฟล์ถูกต้อง)
-        logo_image = Image.open("image_19.png")
+        logo_image = Image.open("IMG_3497.png")
         # แสดงภาพด้วย st.image กำหนดความกว้างให้เหมาะสม (เช่น 150 พิกเซล)
         st.image(logo_image, width=150)
     except FileNotFoundError:
