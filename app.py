@@ -68,7 +68,7 @@ class PDF(FPDF):
         except: self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'หน้า {self.page_no()}', 0, 0, 'C')
 
-def create_pdf(inputs, results, cost_total):
+def create_pdf(inputs, results, cost_total, sample_type):
     pdf = PDF()
     pdf.add_page()
     try:
@@ -81,6 +81,7 @@ def create_pdf(inputs, results, cost_total):
     pdf.cell(200, 10, "1. ข้อมูลโครงการ (Project Info)", ln=True)
     pdf.set_font(font, '', 16)
     pdf.cell(200, 10, f"วันที่: {time.strftime('%d/%m/%Y')}", ln=True)
+    pdf.cell(200, 10, f"ประเภทตัวอย่าง: {sample_type}", ln=True)
     pdf.ln(5)
     
     pdf.set_font(font, 'B', 16)
@@ -105,46 +106,72 @@ def create_pdf(inputs, results, cost_total):
     return pdf.output(dest='S').encode('latin-1')
 
 # -------------------------------------------
-# ฟังก์ชันสร้างโมเดล 3 มิติ (3D Soil-Cement Sample) - [NEW]
+# [NEW] ฟังก์ชันสร้างโมเดล 3 มิติ (เลือกทรงได้)
 # -------------------------------------------
-def plot_3d_cylinder(ksc):
-    # สร้างทรงกระบอก
-    r = 1
-    h = 2
-    theta = np.linspace(0, 2*np.pi, 50)
-    z = np.linspace(0, h, 20)
-    theta_grid, z_grid = np.meshgrid(theta, z)
-    x = r * np.cos(theta_grid)
-    y = r * np.sin(theta_grid)
-    
-    # กำหนดสีโทนน้ำตาล (Soil Cement) ตามความเข้มข้นของกำลังอัด
-    # ยิ่งค่า ksc สูง สีจะยิ่งเข้ม
-    intensity = min(1.0, ksc / 800) 
-    # สีน้ำตาลพื้นฐาน (RGB)
-    r_val = int(180 - (intensity * 60))
-    g_val = int(140 - (intensity * 60))
-    b_val = int(100 - (intensity * 60))
-    color_str = f'rgb({r_val},{g_val},{b_val})'
-    
+def plot_3d_sample(ksc, shape_type):
     fig = go.Figure()
     
-    # ผิวข้าง
-    fig.add_trace(go.Surface(x=x, y=y, z=z_grid, colorscale=[[0, color_str], [1, color_str]], showscale=False, opacity=1.0))
+    # คำนวณความเข้มสีตามค่า ksc (ยิ่งเยอะ ยิ่งเข้ม)
+    intensity = min(1.0, ksc / 800)
     
-    # ปิดฝาบน/ล่าง (ใช้ Scatter3d วาดจุดแน่นๆ เพื่อจำลองฝา)
-    r_cap = np.linspace(0, r, 10)
-    th_cap = np.linspace(0, 2*np.pi, 30)
-    r_grid, th_grid = np.meshgrid(r_cap, th_cap)
-    x_cap = r_grid * np.cos(th_grid)
-    y_cap = r_grid * np.sin(th_grid)
-    z_top = np.full_like(x_cap, h)
-    z_bot = np.full_like(x_cap, 0)
-    
-    fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_top, colorscale=[[0, '#5D4037'], [1, '#5D4037']], showscale=False)) # ฝาบนสีเข้ม
-    fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_bot, colorscale=[[0, '#5D4037'], [1, '#5D4037']], showscale=False)) # ฝาล่าง
-    
+    # 1. กำหนดสี (Texture)
+    if "ดิน" in shape_type:
+        # โทนน้ำตาล (Soil)
+        r = int(180 - (intensity * 60))
+        g = int(140 - (intensity * 60))
+        b = int(100 - (intensity * 60))
+        base_color = f'rgb({r},{g},{b})'
+        cap_color = '#5D4037'
+    else:
+        # โทนเทา (Concrete)
+        gray_val = int(200 - (intensity * 100))
+        base_color = f'rgb({gray_val},{gray_val},{gray_val})'
+        cap_color = f'rgb({gray_val-20},{gray_val-20},{gray_val-20})'
+
+    # 2. วาดรูปทรง
+    if "ทรงกระบอก" in shape_type: # Cylinder
+        r_cyl = 1
+        h_cyl = 2
+        theta = np.linspace(0, 2*np.pi, 50)
+        z = np.linspace(0, h_cyl, 20)
+        theta_grid, z_grid = np.meshgrid(theta, z)
+        x = r_cyl * np.cos(theta_grid)
+        y = r_cyl * np.sin(theta_grid)
+        
+        # ผิวข้าง
+        fig.add_trace(go.Surface(x=x, y=y, z=z_grid, colorscale=[[0, base_color], [1, base_color]], showscale=False, opacity=1.0))
+        
+        # ฝาปิด
+        r_cap = np.linspace(0, r_cyl, 10)
+        th_cap = np.linspace(0, 2*np.pi, 30)
+        r_grid, th_grid = np.meshgrid(r_cap, th_cap)
+        x_cap = r_grid * np.cos(th_grid)
+        y_cap = r_grid * np.sin(th_grid)
+        z_top = np.full_like(x_cap, h_cyl)
+        z_bot = np.full_like(x_cap, 0)
+        
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_top, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_bot, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        
+    elif "ลูกบาศก์" in shape_type: # Cube
+        # ใช้ Mesh3d วาดลูกบาศก์
+        fig.add_trace(go.Mesh3d(
+            # พิกัดจุดมุมทั้ง 8 ของลูกบาศก์
+            x=[0, 1, 1, 0, 0, 1, 1, 0],
+            y=[0, 0, 1, 1, 0, 0, 1, 1],
+            z=[0, 0, 0, 0, 1, 1, 1, 1],
+            # กำหนดสี
+            color=base_color,
+            opacity=1.0,
+            # การเชื่อมจุด (Triangulation) - i, j, k
+            i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2],
+            j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3],
+            k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6],
+            flatshading = True
+        ))
+
     fig.update_layout(
-        title="แบบจำลองก้อนตัวอย่าง (3D Digital Sample)",
+        title=f"ตัวอย่าง: {shape_type}",
         scene=dict(
             xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.2))
@@ -168,7 +195,6 @@ def plot_stress_strain(fc_prime):
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=strain, y=stress, mode='lines', line=dict(color='#2c3e50', width=3), name='Stress-Strain'))
-    # Points
     idx_el = np.abs(stress[:50] - fc_prime*0.45).argmin()
     idx_pk = np.argmax(stress)
     fig.add_trace(go.Scatter(x=[strain[idx_el]], y=[stress[idx_el]], mode='markers', marker=dict(color='orange', size=8), name='Elastic'))
@@ -230,7 +256,6 @@ if st.session_state['calculated']:
     pred_mpa = model.predict(input_data)[0]
     pred_ksc = pred_mpa * 10.197
     
-    # Cost Calc
     cost_total = (cement*2.5 + slag*1.5 + flyash*1.0 + water*0.015 + superplastic*40 + coarse*0.35 + fine*0.30)
     
     # --- Layout Grid ---
@@ -256,15 +281,19 @@ if st.session_state['calculated']:
         else: st.success(f"✅ w/b = {wb:.2f} ผ่านเกณฑ์")
 
     with c2:
-        # [NEW] 3D Model Display
-        st.plotly_chart(plot_3d_cylinder(pred_ksc), use_container_width=True)
+        # [NEW] Selector for 3D Shape
+        shape_opt = st.radio("เลือกรูปแบบตัวอย่าง (Sample Type):", 
+                             ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], 
+                             horizontal=True)
+        
+        st.plotly_chart(plot_3d_sample(pred_ksc, shape_opt), use_container_width=True)
         
         # Download Buttons
         b_ex = io.BytesIO()
         with pd.ExcelWriter(b_ex, engine='xlsxwriter') as w:
             pd.DataFrame({'Result': [pred_ksc]}).to_excel(w)
         
-        pdf_dat = create_pdf(input_data.iloc[0], {'ksc': pred_ksc}, cost_total)
+        pdf_dat = create_pdf(input_data.iloc[0], {'ksc': pred_ksc}, cost_total, shape_opt)
         
         col_d1, col_d2 = st.columns(2)
         col_d1.download_button("📥 Excel", b_ex, "res.xlsx")
@@ -298,7 +327,7 @@ if st.session_state['calculated']:
         
     with sens_c2:
         st.metric("ราคาประเมิน (บาท/ลบ.ม.)", f"{cost_total:,.2f}")
-        # Pie Chart for Cost
+        # Pie Chart
         cost_df = pd.DataFrame({'Mat':['Cement','Slag','FlyAsh','Water','SP','Rock','Sand'],
                                 'Cost':[cement*2.5, slag*1.5, flyash*1.0, water*0.015, superplastic*40, coarse*0.35, fine*0.30]})
         fig_pie = go.Figure(data=[go.Pie(labels=cost_df['Mat'], values=cost_df['Cost'], hole=.4)])
