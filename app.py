@@ -28,25 +28,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------
-# ฟังก์ชัน PDF แบบราชการ (แก้ไขเรื่องฟอนต์)
+# ฟังก์ชัน PDF แบบราชการ (ไม่มีตราประทับ)
 # -------------------------------------------
 class PDF(FPDF):
     def header(self):
-        # พยายามโหลดฟอนต์ (ใช้แค่ตัวธรรมดา Regular อย่างเดียว)
         try:
             self.add_font('THSarabunNew', '', 'THSarabunNew.ttf', uni=True)
-            self.set_font('THSarabunNew', '', 12) # ใช้ '' แทน 'B' เพื่อป้องกัน Error
+            self.set_font('THSarabunNew', '', 12)
         except:
             self.set_font('Arial', '', 10)
 
-        # มุมขวาบน
         self.cell(0, 5, 'FERROCRETE   216   ไม่ผสมหิน', 0, 1, 'R')
         self.ln(5)
         
-        # ชื่อหน่วยงาน (เพิ่มขนาดแทนการใช้ตัวหนา)
-        try: self.set_font('THSarabunNew', '', 22) # เพิ่มขนาดเป็น 22 ให้ดูหนาขึ้น
+        try: self.set_font('THSarabunNew', '', 22)
         except: self.set_font('Arial', 'B', 16)
-        self.cell(0, 10, 'สำนักวิเคราะห์และตรวจสอบ กรมทางหลวง', 0, 1, 'C')
+        self.cell(0, 10, '', 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
@@ -70,7 +67,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     pdf.set_font(font_normal, '', 14)
     lh = 7 
     
-    # ข้อมูลจำลองโครงการ
     pdf.cell(30, lh, "อันดับทดลองที่:", 0, 0)
     pdf.cell(60, lh, "CO - 129/2567 (AI Sim)", "B", 0)
     pdf.cell(30, lh, "วันที่รับตัวอย่าง:", 0, 0)
@@ -85,7 +81,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     pdf.cell(160, lh, f"โครงการทดสอบคอนกรีตด้วย AI (ปูน {inputs['Cement']} | น้ำ {inputs['Water']})", "B", 1)
     pdf.ln(5)
 
-    # หัวข้อรายงาน (เพิ่มขนาดแทนตัวหนา)
     pdf.set_font(font_normal, '', 18)
     pdf.cell(0, 10, "รายงานการทดลองแรงอัดของแท่งคอนกรีต", 0, 1, 'C')
 
@@ -101,7 +96,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
         pdf.cell(col_w[i], row_h, h, 1, 0, 'C', 1)
     pdf.ln()
     
-    # ข้อมูล
     sample_name = "ทรงกระบอก" if "ทรงกระบอก" in sample_type else "ลูกบาศก์"
     size_str = "15x30" if "ทรงกระบอก" in sample_type else "15x15x15"
     factors = [1.02, 0.98, 1.00]
@@ -119,7 +113,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
         pdf.cell(col_w[6], row_h, f"{load_kn:.1f}", 1, 0, 'R')
         pdf.cell(col_w[7], row_h, f"{ksc_val:.1f}", 1, 1, 'R')
         
-    # เฉลี่ย
     pdf.cell(sum(col_w[:7]), row_h, "ค่าเฉลี่ย (Average)", 1, 0, 'R')
     pdf.cell(col_w[7], row_h, f"{pred_ksc:.1f}", 1, 1, 'R')
     pdf.ln(10)
@@ -127,18 +120,8 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     # --- ส่วนท้าย (ลายเซ็น) ---
     pdf.set_font(font_normal, '', 14)
     
-    # ตราประทับ
-    x_stamp = 140
-    y_stamp = pdf.get_y()
-    pdf.set_line_width(0.5)
-    pdf.ellipse(x_stamp, y_stamp, 30, 30) 
-    pdf.set_xy(x_stamp, y_stamp+12)
-    pdf.set_font(font_normal, '', 10)
-    pdf.cell(30, 5, "สำนักวิเคราะห์", 0, 1, 'C')
-    pdf.set_xy(x_stamp, y_stamp+17)
-    pdf.cell(30, 5, "กรมทางหลวง", 0, 1, 'C')
-    
-    pdf.set_xy(10, y_stamp + 35)
+    # เว้นที่ว่าง (ลบตราประทับออกแล้ว)
+    pdf.ln(30) 
     
     # ลายเซ็น
     pdf.set_font(font_normal, '', 12)
@@ -161,22 +144,35 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     return pdf.output(dest='S').encode('latin-1')
 
 # -------------------------------------------
-# กราฟและ 3D
+# กราฟและ 3D Simulation (กู้คืนกลับมาแล้ว)
 # -------------------------------------------
 def plot_3d_sample(ksc, shape_type):
     fig = go.Figure()
     intensity = min(1.0, ksc / 800)
-    if "ดิน" in shape_type: r,g,b = int(101-(intensity*20)), int(78-(intensity*20)), int(60-(intensity*20)); base_color = f'rgb({r},{g},{b})'; cap_color = f'rgb({r-10},{g-10},{b-10})'
-    else: g = int(200-(intensity*100)); base_color = f'rgb({g},{g},{g})'; cap_color = f'rgb({g-20},{g-20},{g-20})'
+    
+    # สีโทนน้ำตาล (ดิน) หรือ เทา (คอนกรีต)
+    if "ดิน" in shape_type: 
+        r,g,b = int(101-(intensity*20)), int(78-(intensity*20)), int(60-(intensity*20))
+        base_color = f'rgb({r},{g},{b})'; cap_color = f'rgb({r-10},{g-10},{b-10})'
+    else: 
+        g = int(200-(intensity*100))
+        base_color = f'rgb({g},{g},{g})'; cap_color = f'rgb({g-20},{g-20},{g-20})'
     
     if "ทรงกระบอก" in shape_type:
         theta, z = np.linspace(0, 2*np.pi, 50), np.linspace(0, 2, 20); T, Z = np.meshgrid(theta, z)
         fig.add_trace(go.Surface(x=np.cos(T), y=np.sin(T), z=Z, colorscale=[[0, base_color], [1, base_color]], showscale=False))
+        # ฝาปิด
         fig.add_trace(go.Surface(x=np.cos(T)*np.linspace(0,1,10)[:,None], y=np.sin(T)*np.linspace(0,1,10)[:,None], z=np.zeros_like(T)+2, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        fig.add_trace(go.Surface(x=np.cos(T)*np.linspace(0,1,10)[:,None], y=np.sin(T)*np.linspace(0,1,10)[:,None], z=np.zeros_like(T), colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        
     elif "ลูกบาศก์" in shape_type:
-        fig.add_trace(go.Mesh3d(x=[0,1,1,0,0,1,1,0], y=[0,0,1,1,0,0,1,1], z=[0,0,0,0,1,1,1,1], color=base_color, i=[7,0,0,0,4,4,6,6,4,0,3,2], j=[3,4,1,2,5,6,5,2,0,1,6,3], k=[0,7,2,3,6,7,1,1,5,5,7,6]))
+        fig.add_trace(go.Mesh3d(
+            x=[0,1,1,0,0,1,1,0], y=[0,0,1,1,0,0,1,1], z=[0,0,0,0,1,1,1,1], 
+            color=base_color, 
+            i=[7,0,0,0,4,4,6,6,4,0,3,2], j=[3,4,1,2,5,6,5,2,0,1,6,3], k=[0,7,2,3,6,7,1,1,5,5,7,6]
+        ))
     
-    fig.update_layout(title=f"Sample: {shape_type}", scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)), height=350, margin=dict(l=0,r=0,b=0,t=30))
+    fig.update_layout(title=f"Sample 3D: {shape_type}", scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)), height=350, margin=dict(l=0,r=0,b=0,t=30))
     return fig
 
 def plot_stress_strain(fc):
@@ -234,16 +230,18 @@ if st.session_state['calculated']:
     
     c1, c2 = st.columns([1, 1])
     with c2:
-        st.markdown("#####  เลือกรูปแบบตัวอย่าง")
+        st.markdown("##### เลือกรูปแบบตัวอย่าง")
+        # เมนูเลือกรูปทรงยังอยู่ เพื่อใช้ควบคุม 3D และ PDF
         shape = st.radio("", ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], label_visibility="collapsed")
         
         fac = 1.2 if "ลูกบาศก์" in shape else 1.0
         final_ksc = base_ksc * fac
         
+        # --- แสดง 3D (กู้คืนกลับมาแล้ว) ---
         st.plotly_chart(plot_3d_sample(final_ksc, shape), use_container_width=True)
         
         pdf_bytes = create_official_pdf(input_data.iloc[0], final_ksc, shape)
-        st.download_button("📄 พิมพ์รายงาน (แบบ บ.216)", pdf_bytes, "official_report.pdf", "application/pdf", type="primary")
+        st.download_button("📄 พิมพ์รายงาน ", pdf_bytes, "official_report.pdf", "application/pdf", type="primary")
 
     with c1:
         st.subheader("ผลการทำนาย")
@@ -258,7 +256,7 @@ if st.session_state['calculated']:
 
     if enable_val and act_ksc > 0:
         err = abs(act_ksc - final_ksc)/act_ksc * 100
-        st.markdown(f"""<div class="validation-box"><h3>🧪 ผลการเทียบ Lab</h3>ค่าพยากรณ์: <b>{final_ksc:.2f}</b> vs ค่าจริง: <b>{act_ksc:.2f}</b> (Error: {err:.2f}%)</div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class="validation-box"><h3> ผลการเทียบ Lab</h3>ค่าพยากรณ์: <b>{final_ksc:.2f}</b> vs ค่าจริง: <b>{act_ksc:.2f}</b> (Error: {err:.2f}%)</div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     r1, r2 = st.columns(2)
@@ -266,6 +264,11 @@ if st.session_state['calculated']:
     with r2: st.bar_chart(pd.DataFrame({"วัสดุ":["ปูน","สแลก","เถ้า","น้ำ","สาร","หิน","ทราย"], "ปริมาณ":[c,s,f,w,sp,ca,fa]}).set_index("วัสดุ"))
     
     st.markdown("---")
+    with st.expander("📝 รายการคำนวณ (Calculation Sheet)"):
+        st.latex(rf"Binder = {c} + {s} + {f} = {total_binder} \; kg/m^3")
+        st.latex(rf"w/b = \frac{{{w}}}{{{total_binder}}} = \mathbf{{{wb_ratio:.3f}}}")
+        st.latex(rf"Final Strength = {final_ksc:.2f} \; ksc")
+
     st.markdown("### 🔍 วิเคราะห์แนวโน้ม & ราคา")
     s1, s2 = st.columns(2)
     with s1: 
