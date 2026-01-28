@@ -27,7 +27,7 @@ if 'calculated' not in st.session_state:
 # โหลดโมเดล
 try:
     model = joblib.load('concrete_model.pkl')
-    model_status = "ระบบพร้อมใช้งาน (System Ready)"
+    model_status = "✅ ระบบพร้อมใช้งาน (System Ready)"
 except:
     st.error("ข้อผิดพลาด: ไม่พบไฟล์โมเดล (concrete_model.pkl) กรุณาตรวจสอบ")
     model_status = "เกิดข้อผิดพลาด (System Error)"
