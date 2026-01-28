@@ -52,6 +52,13 @@ st.markdown("""
         border-left: 5px solid #2e7d32;
         margin-top: 20px;
     }
+    .design-box {
+        background-color: #e3f2fd;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #1976d2;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -198,26 +205,99 @@ def plot_sensitivity(model, base_df, col_name, label):
     except: return go.Figure()
 
 # -------------------------------------------
-# 4. Sidebar Input
+# [Logic ใหม่] ฟังก์ชันออกแบบส่วนผสมย้อนกลับ
+# -------------------------------------------
+def auto_design_mix(target_ksc, binder_type):
+    # 1. แปลงหน่วยเป็น MPa
+    target_mpa = target_ksc / 10.197
+    
+    # 2. ประมาณการ w/b ratio (Abrams' Law Approximation)
+    # สมมติ: Strength = 100 / 4^(w/c) -> Logarithmic regression
+    # หรือใช้สูตร Rule of Thumb ง่ายๆ: w/b = 0.8 - (0.008 * MPa)
+    est_wb = 0.85 - (0.01 * target_mpa)
+    est_wb = max(0.25, min(0.7, est_wb)) # Limit ค่าให้อยู่ในช่วงความเป็นจริง
+    
+    # 3. กำหนดค่าน้ำมาตรฐาน (Standard Water Demand)
+    water_content = 185.0 # ลิตร/ลบ.ม. (ค่ากลางๆ สำหรับ Slump 7.5-10 cm)
+    
+    # 4. คำนวณ Binder
+    total_binder = water_content / est_wb
+    
+    # 5. แบ่งสัดส่วน Binder ตามประเภทที่เลือก
+    c, s, f = 0, 0, 0
+    if binder_type == "ปูนซีเมนต์ล้วน (OPC)":
+        c = total_binder
+    elif binder_type == "ผสมเถ้าลอย (Fly Ash 20%)":
+        c = total_binder * 0.8
+        f = total_binder * 0.2
+    elif binder_type == "ผสมสแลก (Slag 40%)":
+        c = total_binder * 0.6
+        s = total_binder * 0.4
+        
+    # 6. คำนวณมวลรวม (Aggregates) โดยวิธีปริมาตรสัมบูรณ์ (Absolute Volume - Simplified)
+    # สมมติ Unit Weight คอนกรีต = 2350 kg/m3
+    total_weight = 2350
+    sp = 5.0 # Superplasticizer (ใส่ไว้นิดหน่อย)
+    
+    agg_weight = total_weight - (c + s + f + water_content + sp)
+    
+    # แบ่ง หิน:ทราย = 60:40
+    ca = agg_weight * 0.60
+    fa = agg_weight * 0.40
+    
+    age = 28 # ออกแบบที่ 28 วัน
+    
+    return c, s, f, water_content, sp, ca, fa, age
+
+# -------------------------------------------
+# 4. Sidebar Input (Switch Mode)
 # -------------------------------------------
 with st.sidebar:
-    st.title("กำหนดค่าพารามิเตอร์")
+    st.title("เมนูหลัก")
     try: st.image(Image.open("image_19.png"), width=150)
     except: pass
+    
+    # --- เลือกโหมดการทำงาน ---
+    app_mode = st.radio("เลือกโหมดการทำงาน:", 
+                        ["1. ทำนายกำลังอัด (Predict)", 
+                         "2. ออกแบบส่วนผสม (Auto-Design)"], 
+                        index=0)
+    
     st.markdown("---")
     
-    cement = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
-    slag = st.number_input("สแลก", 0.0, 1000.0, 0.0)
-    flyash = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
-    water = st.number_input("น้ำ", 0.0, 500.0, 180.0)
-    superplastic = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
-    coarse = st.number_input("หิน", 0.0, 2000.0, 1000.0)
-    fine = st.number_input("ทราย", 0.0, 2000.0, 800.0)
-    age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
+    # ตัวแปรที่จะใช้คำนวณ (Initialize)
+    c, s, f, w, sp, ca, fa, age = 0,0,0,0,0,0,0,28
     
-    if st.button(" คำนวณกำลังอัด", type="primary"):
-        st.session_state['calculated'] = True
-    
+    if app_mode == "1. ทำนายกำลังอัด (Predict)":
+        st.header("กรอกปริมาณวัสดุ")
+        c = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
+        s = st.number_input("สแลก", 0.0, 1000.0, 0.0)
+        f = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
+        w = st.number_input("น้ำ", 0.0, 500.0, 180.0)
+        sp = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
+        ca = st.number_input("หิน", 0.0, 2000.0, 1000.0)
+        fa = st.number_input("ทราย", 0.0, 2000.0, 800.0)
+        age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
+        
+        if st.button(" คำนวณกำลังอัด", type="primary"):
+            st.session_state['calculated'] = True
+            
+    else: # โหมด Auto-Design
+        st.header("กำหนดเป้าหมาย")
+        target_ksc = st.number_input("กำลังอัดที่ต้องการ (ksc)", 100.0, 1000.0, 350.0)
+        binder_opt = st.selectbox("เลือกประเภทวัสดุประสาน:", 
+                                  ["ปูนซีเมนต์ล้วน (OPC)", 
+                                   "ผสมเถ้าลอย (Fly Ash 20%)", 
+                                   "ผสมสแลก (Slag 40%)"])
+        
+        if st.button(" ออกแบบส่วนผสม", type="primary"):
+            st.session_state['calculated'] = True
+            # คำนวณสูตรผสมอัตโนมัติ
+            c, s, f, w, sp, ca, fa, age = auto_design_mix(target_ksc, binder_opt)
+            
+            # เก็บค่าลง Session State เพื่อส่งไปหน้า Main
+            st.session_state['design_res'] = (c, s, f, w, sp, ca, fa, age, target_ksc)
+
     st.markdown("---")
     st.markdown("###  เปรียบเทียบผลทดสอบจริง")
     enable_validation = st.checkbox("เปิดโหมด Validation")
@@ -234,8 +314,20 @@ st.markdown("---")
 
 if st.session_state['calculated']:
     
-    # 1. Prediction (Base = Cylinder)
-    input_data = pd.DataFrame([[cement, slag, flyash, water, superplastic, coarse, fine, age]],
+    # กรณีมาจากโหมด Auto-Design ให้ดึงค่าที่คำนวณไว้มาใช้
+    if app_mode == "2. ออกแบบส่วนผสม (Auto-Design)" and 'design_res' in st.session_state:
+        c, s, f, w, sp, ca, fa, age, target_ksc = st.session_state['design_res']
+        
+        st.markdown(f"""
+        <div class="design-box">
+            <h3>✨ ผลการออกแบบส่วนผสม (Auto-Design Result)</h3>
+            <p>สำหรับเป้าหมาย: <b>{target_ksc:.0f} ksc</b> โดยใช้ <b>{st.session_state.get('binder_opt', 'สูตรที่เลือก')}</b></p>
+            <p><i>*ระบบคำนวณย้อนกลับด้วยหลักการ Abrams' Law และปรับสัดส่วนอัตโนมัติ</i></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 1. Prediction (AI Check)
+    input_data = pd.DataFrame([[c, s, f, w, sp, ca, fa, age]],
                               columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 
                                        'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
     
@@ -248,27 +340,26 @@ if st.session_state['calculated']:
     c1, c2 = st.columns([1, 1])
     
     with c2:
-        # --- เลือกรูปทรงและปรับค่า Strength ---
         st.markdown("#####  เลือกรูปแบบตัวอย่าง (Sample Type)")
         shape_opt = st.radio("", 
                              ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], 
                              horizontal=False, label_visibility="collapsed")
         
-        # ปรับค่า Strength ตามรูปทรง (Conversion Factor)
+        # ปรับค่า Strength
         correction_factor = 1.0
         if "ลูกบาศก์" in shape_opt:
-            correction_factor = 1.20 # Cube แข็งกว่า Cylinder ~20%
+            correction_factor = 1.20 
             st.info(" หมายเหตุ: แปลงค่าจาก Cylinder เป็น Cube (x1.20) ตามมาตรฐานวิศวกรรม")
             
         final_ksc = base_ksc * correction_factor
         
-        # แสดง 3D (สีปรับใหม่ให้เหมือนรูปจริง)
+        # แสดง 3D
         st.plotly_chart(plot_3d_sample(final_ksc, shape_opt), use_container_width=True)
         
-        # Download
+        # Download Buttons
         b_ex = io.BytesIO()
-        with pd.ExcelWriter(b_ex, engine='xlsxwriter') as w:
-            pd.DataFrame({'Result': [final_ksc]}).to_excel(w)
+        with pd.ExcelWriter(b_ex, engine='xlsxwriter') as wr:
+            pd.DataFrame({'Result': [final_ksc]}).to_excel(wr)
         pdf_dat = create_pdf(input_data.iloc[0], {'ksc': final_ksc}, cost_total, shape_opt)
         
         col_d1, col_d2 = st.columns(2)
@@ -276,33 +367,36 @@ if st.session_state['calculated']:
         col_d2.download_button("📄 PDF", pdf_dat, "rep.pdf", "application/pdf")
 
     with c1:
-        st.subheader("ผลการทำนาย")
-        # แสดงค่าที่ปรับแก้แล้ว (final_ksc)
-        fig_g = go.Figure(go.Indicator(
-            mode = "gauge+number", value = final_ksc,
-            title = {'text': "กำลังอัด (ksc)", 'font': {'size': 24}},
-            gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, 
-                     'steps': [{'range': [0, 180], 'color': '#ff4b4b'}, {'range': [280, 450], 'color': '#21c354'}],
-                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': final_ksc}}
-        ))
+        st.subheader("ผลการวิเคราะห์ (AI Prediction)")
+        
+        # ถ้าเป็นโหมด Design ให้โชว์เปรียบเทียบ Target vs Prediction
+        if app_mode == "2. ออกแบบส่วนผสม (Auto-Design)":
+             fig_g = go.Figure(go.Indicator(
+                mode = "gauge+number+delta", 
+                value = final_ksc,
+                delta = {'reference': target_ksc, 'position': "top", 'relative': False},
+                title = {'text': "AI ตรวจสอบกำลังอัด (ksc)", 'font': {'size': 24}},
+                gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, 
+                         'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': target_ksc}}
+            ))
+        else:
+            fig_g = go.Figure(go.Indicator(
+                mode = "gauge+number", value = final_ksc,
+                title = {'text': "กำลังอัด (ksc)", 'font': {'size': 24}},
+                gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, 
+                         'steps': [{'range': [0, 180], 'color': '#ff4b4b'}, {'range': [280, 450], 'color': '#21c354'}],
+                         'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': final_ksc}}
+            ))
+            
         fig_g.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
         st.plotly_chart(fig_g, use_container_width=True)
         
-        # =========================================================
-        # ✅ กลับมาใช้ w/b ratio ตามเดิม
-        # =========================================================
-        st.markdown("#####  ตรวจสอบมาตรฐาน (ACI)")
+        # Check Standards (w/b)
+        total_binder = c + s + f
+        wb_ratio = w / total_binder if total_binder > 0 else 0
         
-        total_binder = cement + slag + flyash
-        if total_binder > 0:
-            wb_ratio = water / total_binder
-        else:
-            wb_ratio = 0
-            
-        if wb_ratio > 0.5: 
-            st.warning(f"⚠️ w/b = {wb_ratio:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
-        else: 
-            st.success(f"✅ w/b = {wb_ratio:.2f} ผ่านเกณฑ์")
+        if wb_ratio > 0.5: st.warning(f"⚠️ w/b = {wb_ratio:.3f} (>0.5) ไม่เหมาะกับงานภายนอก")
+        else: st.success(f"✅ w/b = {wb_ratio:.3f} ผ่านเกณฑ์")
 
     # --- Validation Section ---
     if enable_validation and actual_ksc > 0:
@@ -332,13 +426,13 @@ if st.session_state['calculated']:
     r2_c1, r2_c2 = st.columns(2)
     with r2_c1: st.plotly_chart(plot_stress_strain(final_ksc), use_container_width=True)
     with r2_c2:
-        df_mix = pd.DataFrame({"Item": ["Cement", "Slag", "FlyAsh", "Water", "SP", "Coarse", "Fine"], "Qty": [cement, slag, flyash, water, superplastic, coarse, fine]})
+        df_mix = pd.DataFrame({"Item": ["Cement", "Slag", "FlyAsh", "Water", "SP", "Coarse", "Fine"], "Qty": [c, s, f, w, sp, ca, fa]})
         st.bar_chart(df_mix.set_index("Item"))
 
     st.markdown("---")
     with st.expander("📝 รายการคำนวณ (Calculation Sheet)"):
-        st.latex(rf"Binder = {cement} + {slag} + {flyash} = {total_binder} \; kg/m^3")
-        st.latex(rf"w/b = \frac{{Water}}{{Binder}} = \frac{{{water}}}{{{total_binder}}} = \mathbf{{{wb_ratio:.3f}}}")
+        st.latex(rf"Binder = {c:.1f} + {s:.1f} + {f:.1f} = {total_binder:.1f} \; kg/m^3")
+        st.latex(rf"w/b = \frac{{{w}}}{{{total_binder:.1f}}} = \mathbf{{{wb_ratio:.3f}}}")
         st.latex(rf"Raw Strength (Cyl) = {base_ksc:.2f} \; ksc")
         st.latex(rf"Shape Factor = \times {correction_factor}")
         st.latex(rf"Final Strength = {final_ksc:.2f} \; ksc")
@@ -351,10 +445,10 @@ if st.session_state['calculated']:
         st.plotly_chart(plot_sensitivity(model, input_data, m_var[t_var], t_var), use_container_width=True)
     with sens_c2:
         st.metric("ราคาประเมิน (บาท/ลบ.ม.)", f"{cost_total:,.2f}")
-        cost_df = pd.DataFrame({'Mat':['Cement','Slag','FlyAsh','Water','SP','Rock','Sand'], 'Cost':[cement*2.5, slag*1.5, flyash*1.0, water*0.015, superplastic*40, coarse*0.35, fine*0.30]})
+        cost_df = pd.DataFrame({'Mat':['Cement','Slag','FlyAsh','Water','SP','Rock','Sand'], 'Cost':[c*2.5, s*1.5, f*1.0, w*0.015, sp*40, ca*0.35, fa*0.30]})
         fig_pie = go.Figure(data=[go.Pie(labels=cost_df['Mat'], values=cost_df['Cost'], hole=.4)])
         fig_pie.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0))
         st.plotly_chart(fig_pie, use_container_width=True)
 
 else:
-    st.info("👈 กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
+    st.info("👈 เลือกโหมดการทำงาน และกดปุ่มคำนวณ")
