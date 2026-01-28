@@ -52,18 +52,11 @@ st.markdown("""
         border-left: 5px solid #2e7d32;
         margin-top: 20px;
     }
-    .design-box {
-        background-color: #e3f2fd;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #1976d2;
-        margin-bottom: 20px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 # -------------------------------------------
-# ฟังก์ชัน PDF และกราฟ (ยึดตามโค้ดเดิมของคุณ 100%)
+# ฟังก์ชัน PDF และกราฟ
 # -------------------------------------------
 class PDF(FPDF):
     def header(self):
@@ -205,36 +198,6 @@ def plot_sensitivity(model, base_df, col_name, label):
     except: return go.Figure()
 
 # -------------------------------------------
-# [ส่วนที่เพิ่มใหม่] ฟังก์ชันคำนวณส่วนผสม (Auto-Design)
-# -------------------------------------------
-def auto_design_mix(target_ksc, binder_type):
-    # สูตรประมาณการ Abrams' Law (Rule of Thumb)
-    target_mpa = target_ksc / 10.197
-    est_wb = max(0.25, min(0.7, 0.85 - (0.01 * target_mpa)))
-    
-    water_content = 185.0 # ค่าน้ำมาตรฐาน
-    total_binder = water_content / est_wb
-    
-    # คำนวณสัดส่วนตามชนิด Binder
-    c, s, f = 0, 0, 0
-    if "ปูนซีเมนต์ล้วน" in binder_type:
-        c = total_binder
-    elif "ผสมเถ้าลอย" in binder_type:
-        c = total_binder * 0.8
-        f = total_binder * 0.2
-    elif "ผสมสแลก" in binder_type:
-        c = total_binder * 0.6
-        s = total_binder * 0.4
-        
-    # คำนวณมวลรวม (สมมติ Unit Weight 2350 kg/m3)
-    sp = 5.0
-    agg_weight = 2350 - (total_binder + water_content + sp)
-    ca = agg_weight * 0.60 # หิน 60%
-    fa = agg_weight * 0.40 # ทราย 40%
-    
-    return c, s, f, water_content, sp, ca, fa, 28
-
-# -------------------------------------------
 # 4. Sidebar Input
 # -------------------------------------------
 with st.sidebar:
@@ -243,46 +206,18 @@ with st.sidebar:
     except: pass
     st.markdown("---")
     
-    # [ส่วนที่เพิ่มใหม่] ปุ่มเลือกโหมดการทำงาน
-    app_mode = st.radio("เลือกโหมดการทำงาน:", 
-                        ["1. ทำนายกำลังอัด (Predict)", 
-                         "2. ออกแบบส่วนผสม (Auto-Design)"])
-    st.markdown("---")
+    cement = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
+    slag = st.number_input("สแลก", 0.0, 1000.0, 0.0)
+    flyash = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
+    water = st.number_input("น้ำ", 0.0, 500.0, 180.0)
+    superplastic = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
+    coarse = st.number_input("หิน", 0.0, 2000.0, 1000.0)
+    fine = st.number_input("ทราย", 0.0, 2000.0, 800.0)
+    age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
     
-    # ค่าเริ่มต้นตัวแปร
-    cement, slag, flyash, water, superplastic, coarse, fine, age = 0,0,0,0,0,0,0,28
+    if st.button(" คำนวณกำลังอัด", type="primary"):
+        st.session_state['calculated'] = True
     
-    if app_mode == "1. ทำนายกำลังอัด (Predict)":
-        # (ส่วนเดิมของคุณ - ไม่เปลี่ยนแปลง)
-        cement = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
-        slag = st.number_input("สแลก", 0.0, 1000.0, 0.0)
-        flyash = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
-        water = st.number_input("น้ำ", 0.0, 500.0, 180.0)
-        superplastic = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
-        coarse = st.number_input("หิน", 0.0, 2000.0, 1000.0)
-        fine = st.number_input("ทราย", 0.0, 2000.0, 800.0)
-        age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
-        
-        if st.button(" คำนวณกำลังอัด", type="primary"):
-            st.session_state['calculated'] = True
-            
-    else: # โหมด Auto-Design (ส่วนที่เพิ่มใหม่)
-        st.header("ระบุความต้องการ")
-        target_ksc = st.number_input("กำลังอัดที่ต้องการ (ksc)", 100.0, 800.0, 350.0)
-        binder_opt = st.selectbox("สูตรผสม:", 
-                                  ["ปูนซีเมนต์ล้วน (OPC)", 
-                                   "ผสมเถ้าลอย (Fly Ash 20%)", 
-                                   "ผสมสแลก (Slag 40%)"])
-        
-        if st.button("✨ คำนวณสูตรผสม", type="primary"):
-            st.session_state['calculated'] = True
-            # คำนวณและเก็บค่าเข้าตัวแปรเดียวกัน
-            cement, slag, flyash, water, superplastic, coarse, fine, age = auto_design_mix(target_ksc, binder_opt)
-            # บันทึกผลไว้แสดงข้อความ
-            st.session_state['design_info'] = (target_ksc, binder_opt)
-            # บันทึกค่าที่คำนวณได้ลง session เพื่อให้คงอยู่เมื่อ Rerun
-            st.session_state['auto_values'] = (cement, slag, flyash, water, superplastic, coarse, fine, age)
-
     st.markdown("---")
     st.markdown("###  เปรียบเทียบผลทดสอบจริง")
     enable_validation = st.checkbox("เปิดโหมด Validation")
@@ -299,20 +234,7 @@ st.markdown("---")
 
 if st.session_state['calculated']:
     
-    # ถ้ามาจาก Auto-Design ให้ดึงค่าที่คำนวณได้มาใช้
-    if app_mode == "2. ออกแบบส่วนผสม (Auto-Design)" and 'auto_values' in st.session_state:
-        cement, slag, flyash, water, superplastic, coarse, fine, age = st.session_state['auto_values']
-        tgt, b_opt = st.session_state.get('design_info', (0, "-"))
-        
-        st.markdown(f"""
-        <div class="design-box">
-            <h3> ผลการออกแบบส่วนผสม (Auto-Design)</h3>
-            <p>เป้าหมาย: <b>{tgt:.0f} ksc</b> | สูตร: <b>{b_opt}</b></p>
-            <p><i>*ระบบคำนวณย้อนกลับและกำหนดสัดส่วนให้โดยอัตโนมัติ</i></p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # 1. Prediction (Base = Cylinder) - ใช้ตัวแปร cement, slag ฯลฯ เหมือนเดิมเป๊ะ
+    # 1. Prediction (Base = Cylinder)
     input_data = pd.DataFrame([[cement, slag, flyash, water, superplastic, coarse, fine, age]],
                               columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 
                                        'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
@@ -336,7 +258,7 @@ if st.session_state['calculated']:
         correction_factor = 1.0
         if "ลูกบาศก์" in shape_opt:
             correction_factor = 1.20 # Cube แข็งกว่า Cylinder ~20%
-            st.info("ℹ️ หมายเหตุ: แปลงค่าจาก Cylinder เป็น Cube (x1.20) ตามมาตรฐานวิศวกรรม")
+            st.info(" หมายเหตุ: แปลงค่าจาก Cylinder เป็น Cube (x1.20) ตามมาตรฐานวิศวกรรม")
             
         final_ksc = base_ksc * correction_factor
         
