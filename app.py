@@ -13,7 +13,7 @@ from fpdf import FPDF
 # -------------------------------------------
 st.set_page_config(
     page_title="ระบบทำนายกำลังอัดคอนกรีต/ดินซีเมนต์",
-    page_icon="👷🏻‍♂️",
+    page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -117,13 +117,16 @@ def plot_3d_sample(ksc, shape_type):
     fig = go.Figure()
     intensity = min(1.0, ksc / 800)
     
+    # ปรับสีให้เหมือนรูปถ่ายจริง (ดินซีเมนต์)
     if "ดิน" in shape_type:
-        r = int(180 - (intensity * 60))
-        g = int(140 - (intensity * 60))
-        b = int(100 - (intensity * 60))
+        # โทนน้ำตาลเข้ม เหมือนก้อนดินอัดแน่น
+        r = int(101 - (intensity * 20)) 
+        g = int(78 - (intensity * 20))
+        b = int(60 - (intensity * 20))
         base_color = f'rgb({r},{g},{b})'
-        cap_color = '#5D4037'
+        cap_color = f'rgb({r-10},{g-10},{b-10})' # ฝาสีเข้มกว่านิดหน่อย
     else:
+        # โทนเทาคอนกรีต
         gray_val = int(200 - (intensity * 100))
         base_color = f'rgb({gray_val},{gray_val},{gray_val})'
         cap_color = f'rgb({gray_val-20},{gray_val-20},{gray_val-20})'
@@ -136,8 +139,21 @@ def plot_3d_sample(ksc, shape_type):
         theta_grid, z_grid = np.meshgrid(theta, z)
         x = r_cyl * np.cos(theta_grid)
         y = r_cyl * np.sin(theta_grid)
+        
+        # ผิวข้าง
         fig.add_trace(go.Surface(x=x, y=y, z=z_grid, colorscale=[[0, base_color], [1, base_color]], showscale=False, opacity=1.0))
-        fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[h_cyl], mode='markers', marker=dict(size=1, color=cap_color))) # Dummy Cap
+        
+        # ฝาปิด (Caps)
+        r_cap = np.linspace(0, r_cyl, 10)
+        th_cap = np.linspace(0, 2*np.pi, 30)
+        r_grid, th_grid = np.meshgrid(r_cap, th_cap)
+        x_cap = r_grid * np.cos(th_grid)
+        y_cap = r_grid * np.sin(th_grid)
+        z_top = np.full_like(x_cap, h_cyl)
+        z_bot = np.full_like(x_cap, 0)
+        
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_top, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_bot, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
 
     elif "ลูกบาศก์" in shape_type: 
         fig.add_trace(go.Mesh3d(
@@ -217,7 +233,7 @@ with st.sidebar:
 # -------------------------------------------
 # 5. Main Content
 # -------------------------------------------
-st.title(" ระบบทำนายกำลังอัดคอนกรีต (AI)")
+st.title("🏗️ ระบบทำนายกำลังอัดคอนกรีต (AI)")
 st.markdown(f"**สถานะ:** {model_status}")
 st.markdown("---")
 
@@ -237,7 +253,7 @@ if st.session_state['calculated']:
     c1, c2 = st.columns([1, 1])
     
     with c2:
-        # --- [Logic ใหม่] เลือกรูปทรงและปรับค่า Strength ---
+        # --- เลือกรูปทรงและปรับค่า Strength ---
         st.markdown("#####  เลือกรูปแบบตัวอย่าง (Sample Type)")
         shape_opt = st.radio("", 
                              ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], 
@@ -251,7 +267,7 @@ if st.session_state['calculated']:
             
         final_ksc = base_ksc * correction_factor
         
-        # แสดง 3D
+        # แสดง 3D (สีปรับใหม่ให้เหมือนรูปจริง)
         st.plotly_chart(plot_3d_sample(final_ksc, shape_opt), use_container_width=True)
         
         # Download
@@ -270,19 +286,30 @@ if st.session_state['calculated']:
         fig_g = go.Figure(go.Indicator(
             mode = "gauge+number", value = final_ksc,
             title = {'text': "กำลังอัด (ksc)", 'font': {'size': 24}},
-            gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, # เพิ่ม Range เผื่อ Cube
+            gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, 
                      'steps': [{'range': [0, 180], 'color': '#ff4b4b'}, {'range': [280, 450], 'color': '#21c354'}],
                      'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': final_ksc}}
         ))
         fig_g.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
         st.plotly_chart(fig_g, use_container_width=True)
         
+        # =========================================================
+        # ✅ แก้ไข Error ตรงนี้ให้แล้วครับ (ใช้ตัวแปร wc ที่ถูกต้อง)
+        # =========================================================
         st.markdown("##### ✅ ตรวจสอบมาตรฐาน (ACI)")
-        wb = water/(cement+slag+flyash) if (cement+slag+flyash)>0 else 0
-        if w/c > 0.5: st.warning(f"⚠️ w/c = {wb:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
-        else: st.success(f"✅ w/c = {wb:.2f} ผ่านเกณฑ์")
+        
+        total_binder = cement + slag + flyash
+        if total_binder > 0:
+            wb_ratio = water / total_binder
+        else:
+            wb_ratio = 0
+            
+        if wb_ratio > 0.5: 
+            st.warning(f"⚠️ w/c = {wb_ratio:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
+        else: 
+            st.success(f"✅ w/c = {wb_ratio:.2f} ผ่านเกณฑ์")
 
-    # --- Validation Section (ใช้ final_ksc เทียบ) ---
+    # --- Validation Section ---
     if enable_validation and actual_ksc > 0:
         error_val = abs(actual_ksc - final_ksc)
         error_percent = (error_val / actual_ksc) * 100
@@ -306,7 +333,7 @@ if st.session_state['calculated']:
 
     st.markdown("---")
     
-    # Graphs (ใช้ final_ksc)
+    # Graphs
     r2_c1, r2_c2 = st.columns(2)
     with r2_c1: st.plotly_chart(plot_stress_strain(final_ksc), use_container_width=True)
     with r2_c2:
@@ -316,7 +343,7 @@ if st.session_state['calculated']:
     st.markdown("---")
     with st.expander("📝 รายการคำนวณ (Calculation Sheet)"):
         st.latex(rf"Binder = {cement+slag+flyash} \; kg/m^3")
-        st.latex(rf"w/b = {wb:.3f}")
+        st.latex(rf"w/b = {wb_ratio:.3f}")
         st.latex(rf"Raw Strength (Cyl) = {base_ksc:.2f} \; ksc")
         st.latex(rf"Shape Factor = \times {correction_factor}")
         st.latex(rf"Final Strength = {final_ksc:.2f} \; ksc")
@@ -335,4 +362,4 @@ if st.session_state['calculated']:
         st.plotly_chart(fig_pie, use_container_width=True)
 
 else:
-    st.info(" กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
+    st.info("👈 กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
