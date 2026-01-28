@@ -11,274 +11,428 @@ from fpdf import FPDF
 # -------------------------------------------
 # 1. ตั้งค่าหน้าเว็บ
 # -------------------------------------------
-st.set_page_config(page_title="ระบบทำนายกำลังอัดคอนกรีต/ดินซีเมนต์", page_icon="🏗️", layout="wide")
+st.set_page_config(
+    page_title="ระบบทำนายกำลังอัดคอนกรีต/ดินซีเมนต์",
+    page_icon="🏗️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-if 'calculated' not in st.session_state: st.session_state['calculated'] = False
+# -------------------------------------------
+# 2. ระบบจำค่า (Session State)
+# -------------------------------------------
+if 'calculated' not in st.session_state:
+    st.session_state['calculated'] = False
 
-try: model = joblib.load('concrete_model.pkl'); model_status = "ระบบพร้อมใช้งาน (System Ready)"
-except: st.error("Error loading model"); model_status = "Error"
+# โหลดโมเดล
+try:
+    model = joblib.load('concrete_model.pkl')
+    model_status = "ระบบพร้อมใช้งาน (System Ready)"
+except:
+    st.error("ข้อผิดพลาด: ไม่พบไฟล์โมเดล (concrete_model.pkl) กรุณาตรวจสอบ")
+    model_status = "เกิดข้อผิดพลาด (System Error)"
 
+# -------------------------------------------
+# 3. CSS Style
+# -------------------------------------------
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap');
     html, body, [class*="css"]  { font-family: 'Sarabun', sans-serif; }
-    div.stButton > button { background-color: #2c3e50; color: white; border-radius: 5px; width: 100%; }
-    .validation-box { background-color: #e8f5e9; padding: 15px; border-radius: 10px; border-left: 5px solid #2e7d32; margin-top: 20px; }
-    .design-box { background-color: #e3f2fd; padding: 15px; border-radius: 10px; border-left: 5px solid #1976d2; margin-bottom: 20px; }
+    div.stButton > button {
+        background-color: #2c3e50; color: white; border-radius: 5px; border: none;
+        padding: 10px 20px; font-size: 16px; width: 100%; transition: all 0.3s;
+    }
+    div.stButton > button:hover { background-color: #34495e; transform: scale(1.02); }
+    
+    .validation-box {
+        background-color: #e8f5e9;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #2e7d32;
+        margin-top: 20px;
+    }
+    .design-box {
+        background-color: #e3f2fd;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #1976d2;
+        margin-bottom: 20px;
+    }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # -------------------------------------------
-# ฟังก์ชัน PDF (Official - No Stamp)
+# ฟังก์ชัน PDF และกราฟ (ยึดตามโค้ดเดิมของคุณ 100%)
 # -------------------------------------------
 class PDF(FPDF):
     def header(self):
-        try: self.add_font('THSarabunNew', '', 'THSarabunNew.ttf', uni=True)
-        except: self.set_font('Arial', '', 10)
-        
-        self.set_font('THSarabunNew', '', 12)
-        self.cell(0, 5, 'FERROCRETE   216   ไม่ผสมหิน', 0, 1, 'R')
-        self.ln(5)
-        
-        try: self.set_font('THSarabunNew', '', 22)
-        except: self.set_font('Arial', 'B', 16)
-        self.cell(0, 10, 'สำนักวิเคราะห์และตรวจสอบ กรมทางหลวง', 0, 1, 'C')
-        self.ln(5)
-
+        try: self.image('image_19.png', 10, 8, 25)
+        except: pass
+        try:
+            self.add_font('THSarabunNew', '', 'THSarabunNew.ttf', uni=True)
+            self.set_font('THSarabunNew', '', 20)
+        except:
+            self.set_font('Arial', 'B', 15)
+        self.cell(80)
+        self.cell(30, 10, 'รายงานผลการออกแบบ (Design Report)', 0, 0, 'C')
+        self.ln(20)
     def footer(self):
         self.set_y(-15)
-        try: self.set_font('THSarabunNew', '', 12)
+        try: self.set_font('THSarabunNew', '', 14)
         except: self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'หน้า {self.page_no()} / {{nb}}', 0, 0, 'R')
+        self.cell(0, 10, f'หน้า {self.page_no()}', 0, 0, 'C')
 
-def create_official_pdf(inputs, pred_ksc, sample_type):
+def create_pdf(inputs, results, cost_total, sample_type):
     pdf = PDF()
-    pdf.alias_nb_pages()
     pdf.add_page()
+    try:
+        pdf.add_font('THSarabunNew', '', 'THSarabunNew.ttf', uni=True)
+        pdf.add_font('THSarabunNew', 'B', 'THSarabunNew.ttf', uni=True)
+        font = 'THSarabunNew'
+    except: font = 'Arial'
     
-    try: pdf.add_font('THSarabunNew', '', 'THSarabunNew.ttf', uni=True); font='THSarabunNew'
-    except: font='Arial'
-
-    pdf.set_font(font, '', 14)
-    lh = 7
-    
-    pdf.cell(30, lh, "อันดับทดลองที่:", 0, 0); pdf.cell(60, lh, "CO - 129/2567 (AI Sim)", "B", 0)
-    pdf.cell(30, lh, "วันที่รับตัวอย่าง:", 0, 0); pdf.cell(70, lh, f"{time.strftime('%d/%m/%Y')}", "B", 1)
-    
-    pdf.cell(30, lh, "เจ้าของตัวอย่าง:", 0, 0); pdf.cell(60, lh, "มหาวิทยาลัยเทคโนโลยีราชมงคลล้านนา", "B", 0)
-    pdf.cell(30, lh, "หนังสือที่:", 0, 0); pdf.cell(70, lh, "001/2567", "B", 1)
-    
-    pdf.cell(30, lh, "หน่วยงาน:", 0, 0)
-    pdf.cell(160, lh, f"โครงการทดสอบคอนกรีตด้วย AI (ปูน {inputs['Cement']:.0f} | น้ำ {inputs['Water']:.0f})", "B", 1)
+    pdf.set_font(font, 'B', 16)
+    pdf.cell(200, 10, "1. ข้อมูลโครงการ (Project Info)", ln=True)
+    pdf.set_font(font, '', 16)
+    pdf.cell(200, 10, f"วันที่: {time.strftime('%d/%m/%Y')}", ln=True)
+    pdf.cell(200, 10, f"ประเภทตัวอย่าง: {sample_type}", ln=True)
     pdf.ln(5)
-
-    pdf.set_font(font, '', 18)
-    pdf.cell(0, 10, "รายงานการทดลองแรงอัดของแท่งคอนกรีต", 0, 1, 'C')
-
-    pdf.set_font(font, '', 12)
-    col_w = [10, 10, 40, 15, 25, 20, 25, 25]
-    row_h = 8
-    headers = ["ที่", "แท่งที่", "ลักษณะตัวอย่าง", "อายุ", "ขนาด (ซม.)", "นน. (กรัม)", "แรงกด (kN)", "ksc"]
     
-    pdf.set_fill_color(240, 240, 240)
-    for i, h in enumerate(headers): pdf.cell(col_w[i], row_h, h, 1, 0, 'C', 1)
-    pdf.ln()
+    pdf.set_font(font, 'B', 16)
+    pdf.cell(200, 10, "2. ส่วนผสม (Mix Proportion)", ln=True)
+    pdf.set_font(font, '', 16)
+    pdf.set_fill_color(220, 220, 220)
+    pdf.cell(100, 10, "รายการ", 1, 0, 'C', 1)
+    pdf.cell(50, 10, "ปริมาณ (kg)", 1, 1, 'C', 1)
     
-    sample_name = "ทรงกระบอก" if "ทรงกระบอก" in sample_type else "ลูกบาศก์"
-    size_str = "15x30" if "ทรงกระบอก" in sample_type else "15x15x15"
-    factors = [1.01, 0.99, 1.00]
-    
-    for i in range(3):
-        ksc_val = pred_ksc * factors[i]
-        load_kn = (ksc_val * 176.7 * 9.81) / 1000 
-        pdf.cell(col_w[0], row_h, "1" if i==0 else "", 1, 0, 'C')
-        pdf.cell(col_w[1], row_h, str(i+1), 1, 0, 'C')
-        pdf.cell(col_w[2], row_h, sample_name, 1, 0, 'C')
-        pdf.cell(col_w[3], row_h, str(int(inputs['Age'])), 1, 0, 'C')
-        pdf.cell(col_w[4], row_h, size_str, 1, 0, 'C')
-        pdf.cell(col_w[5], row_h, "12,500", 1, 0, 'R')
-        pdf.cell(col_w[6], row_h, f"{load_kn:.1f}", 1, 0, 'R')
-        pdf.cell(col_w[7], row_h, f"{ksc_val:.1f}", 1, 1, 'R')
+    mix = {"Cement": inputs['Cement'], "Slag": inputs['Blast Furnace Slag'], "Fly Ash": inputs['Fly Ash'], 
+           "Water": inputs['Water'], "Superplasticizer": inputs['Superplasticizer'], 
+           "Coarse Agg": inputs['Coarse Aggregate'], "Fine Agg": inputs['Fine Aggregate']}
+    for k,v in mix.items():
+        pdf.cell(100, 10, k, 1)
+        pdf.cell(50, 10, f"{v:.2f}", 1, 1, 'R')
         
-    pdf.cell(sum(col_w[:7]), row_h, "ค่าเฉลี่ย (Average)", 1, 0, 'R')
-    pdf.cell(col_w[7], row_h, f"{pred_ksc:.1f}", 1, 1, 'R')
-    pdf.ln(10)
-
-    pdf.set_font(font, '', 14)
-    pdf.ln(20) 
+    pdf.ln(5)
+    pdf.set_font(font, 'B', 16)
+    pdf.cell(200, 10, f"ผลการทำนาย: {results['ksc']:.2f} ksc", ln=True)
+    pdf.cell(200, 10, f"ราคาประเมิน: {cost_total:,.2f} บาท", ln=True)
     
-    y_sig = pdf.get_y()
-    pdf.set_font(font, '', 12)
-    pdf.cell(60, 5, "พิจารณาเฉพาะค่าแรงอัดที่ระบุ", 0, 1, 'L')
-    
-    pdf.set_xy(80, y_sig + 10)
-    pdf.cell(60, 5, "............................................", 0, 1, 'C')
-    pdf.set_xy(80, y_sig + 16)
-    pdf.cell(60, 5, "( ............................................ )", 0, 1, 'C')
-    pdf.set_xy(80, y_sig + 22)
-    pdf.cell(60, 5, "ผู้ตรวจสอบ", 0, 1, 'C')
-    
-    pdf.set_y(-20)
-    pdf.set_font(font, '', 10)
-    pdf.cell(0, 5, "ผลการวิเคราะห์นี้รับรองเฉพาะตัวอย่างที่ได้รับเท่านั้น", 0, 0, 'C')
-
     return pdf.output(dest='S').encode('latin-1')
 
-# -------------------------------------------
-# กราฟและ 3D Simulation
-# -------------------------------------------
 def plot_3d_sample(ksc, shape_type):
     fig = go.Figure()
     intensity = min(1.0, ksc / 800)
-    if "ดิน" in shape_type: r,g,b = int(101-(intensity*20)), int(78-(intensity*20)), int(60-(intensity*20)); base_color = f'rgb({r},{g},{b})'; cap_color = f'rgb({r-10},{g-10},{b-10})'
-    else: g = int(200-(intensity*100)); base_color = f'rgb({g},{g},{g})'; cap_color = f'rgb({g-20},{g-20},{g-20})'
     
-    if "ทรงกระบอก" in shape_type:
-        theta, z = np.linspace(0, 2*np.pi, 50), np.linspace(0, 2, 20); T, Z = np.meshgrid(theta, z)
-        fig.add_trace(go.Surface(x=np.cos(T), y=np.sin(T), z=Z, colorscale=[[0, base_color], [1, base_color]], showscale=False))
-        fig.add_trace(go.Surface(x=np.cos(T)*np.linspace(0,1,10)[:,None], y=np.sin(T)*np.linspace(0,1,10)[:,None], z=np.zeros_like(T)+2, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
-    elif "ลูกบาศก์" in shape_type:
-        fig.add_trace(go.Mesh3d(x=[0,1,1,0,0,1,1,0], y=[0,0,1,1,0,0,1,1], z=[0,0,0,0,1,1,1,1], color=base_color, i=[7,0,0,0,4,4,6,6,4,0,3,2], j=[3,4,1,2,5,6,5,2,0,1,6,3], k=[0,7,2,3,6,7,1,1,5,5,7,6]))
-    
-    fig.update_layout(title=f"Sample: {shape_type}", scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)), height=350, margin=dict(l=0,r=0,b=0,t=30))
+    if "ดิน" in shape_type:
+        r = int(101 - (intensity * 20)) 
+        g = int(78 - (intensity * 20))
+        b = int(60 - (intensity * 20))
+        base_color = f'rgb({r},{g},{b})'
+        cap_color = f'rgb({r-10},{g-10},{b-10})'
+    else:
+        gray_val = int(200 - (intensity * 100))
+        base_color = f'rgb({gray_val},{gray_val},{gray_val})'
+        cap_color = f'rgb({gray_val-20},{gray_val-20},{gray_val-20})'
+
+    if "ทรงกระบอก" in shape_type: 
+        r_cyl = 1
+        h_cyl = 2
+        theta = np.linspace(0, 2*np.pi, 50)
+        z = np.linspace(0, h_cyl, 20)
+        theta_grid, z_grid = np.meshgrid(theta, z)
+        x = r_cyl * np.cos(theta_grid)
+        y = r_cyl * np.sin(theta_grid)
+        
+        fig.add_trace(go.Surface(x=x, y=y, z=z_grid, colorscale=[[0, base_color], [1, base_color]], showscale=False, opacity=1.0))
+        
+        r_cap = np.linspace(0, r_cyl, 10)
+        th_cap = np.linspace(0, 2*np.pi, 30)
+        r_grid, th_grid = np.meshgrid(r_cap, th_cap)
+        x_cap = r_grid * np.cos(th_grid)
+        y_cap = r_grid * np.sin(th_grid)
+        z_top = np.full_like(x_cap, h_cyl)
+        z_bot = np.full_like(x_cap, 0)
+        
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_top, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+        fig.add_trace(go.Surface(x=x_cap, y=y_cap, z=z_bot, colorscale=[[0, cap_color], [1, cap_color]], showscale=False))
+
+    elif "ลูกบาศก์" in shape_type: 
+        fig.add_trace(go.Mesh3d(
+            x=[0, 1, 1, 0, 0, 1, 1, 0],
+            y=[0, 0, 1, 1, 0, 0, 1, 1],
+            z=[0, 0, 0, 0, 1, 1, 1, 1],
+            color=base_color, opacity=1.0,
+            i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2],
+            j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3],
+            k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6],
+            flatshading = True
+        ))
+
+    fig.update_layout(title=f"ตัวอย่าง: {shape_type}", scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)), height=350, margin=dict(l=0, r=0, b=0, t=30))
     return fig
 
-def plot_stress_strain(fc):
-    e = np.linspace(0, 0.0035, 100)
-    s = np.where(e<=0.002, fc*(2*(e/0.002)-(e/0.002)**2), fc-((fc*0.15)/0.0015)*(e-0.002))
-    fig = go.Figure(go.Scatter(x=e, y=s, mode='lines', line=dict(color='#2c3e50', width=3)))
-    fig.update_layout(title="Stress-Strain Simulation", height=300)
+def plot_stress_strain(fc_prime):
+    eps_0, eps_u = 0.002, 0.0035
+    strain = np.linspace(0, eps_u, 100)
+    stress = []
+    for e in strain:
+        if e <= eps_0: f = fc_prime*(2*(e/eps_0)-(e/eps_0)**2)
+        else: f = fc_prime - ((fc_prime-0.85*fc_prime)/(eps_u-eps_0))*(e-eps_0)
+        stress.append(max(0, f))
+    stress = np.array(stress)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=strain, y=stress, mode='lines', line=dict(color='#2c3e50', width=3), name='Stress-Strain'))
+    idx_pk = np.argmax(stress)
+    fig.add_trace(go.Scatter(x=[strain[idx_pk]], y=[stress[idx_pk]], mode='markers', marker=dict(color='red', size=10), name='Ultimate'))
+    fig.update_layout(title="พฤติกรรมรับแรง (Stress-Strain)", height=350, template='plotly_white')
     return fig
 
-def plot_sens(model, base, col, name):
+def plot_sensitivity(model, base_df, col_name, label):
     try:
-        val = base[col].values[0]; x = np.linspace(val*0.5, val*1.5, 20)
-        temp = pd.concat([base]*20, ignore_index=True); temp[col] = x; y = model.predict(temp)*10.197
-        fig = go.Figure([go.Scatter(x=x, y=y, mode='lines'), go.Scatter(x=[val], y=[model.predict(base)[0]*10.197], mode='markers', marker=dict(size=10, color='red'))])
-        fig.update_layout(title=f"Sensitivity: {name}", height=300); return fig
+        val = base_df[col_name].values[0]
+        x = np.linspace(0 if val==0 else val*0.5, val*1.5 if val!=0 else 100, 20)
+        temp = pd.concat([base_df]*len(x), ignore_index=True)
+        temp[col_name] = x
+        y = model.predict(temp) * 10.197
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', name='Trend'))
+        fig.add_trace(go.Scatter(x=[val], y=[model.predict(base_df)[0]*10.197], mode='markers', marker=dict(color='red', size=10), name='Current'))
+        fig.update_layout(title=f"แนวโน้มเมื่อปรับ {label}", height=300, template='plotly_white')
+        return fig
     except: return go.Figure()
 
 # -------------------------------------------
-# [NEW] Logic ออกแบบส่วนผสม (Auto-Design)
+# [ส่วนที่เพิ่มใหม่] ฟังก์ชันคำนวณส่วนผสม (Auto-Design)
 # -------------------------------------------
 def auto_design_mix(target_ksc, binder_type):
+    # สูตรประมาณการ Abrams' Law (Rule of Thumb)
     target_mpa = target_ksc / 10.197
     est_wb = max(0.25, min(0.7, 0.85 - (0.01 * target_mpa)))
-    water = 185.0
-    total_binder = water / est_wb
     
+    water_content = 185.0 # ค่าน้ำมาตรฐาน
+    total_binder = water_content / est_wb
+    
+    # คำนวณสัดส่วนตามชนิด Binder
     c, s, f = 0, 0, 0
-    if "ปูนซีเมนต์ล้วน" in binder_type: c = total_binder
-    elif "เถ้าลอย" in binder_type: c = total_binder * 0.8; f = total_binder * 0.2
-    elif "สแลก" in binder_type: c = total_binder * 0.6; s = total_binder * 0.4
+    if "ปูนซีเมนต์ล้วน" in binder_type:
+        c = total_binder
+    elif "ผสมเถ้าลอย" in binder_type:
+        c = total_binder * 0.8
+        f = total_binder * 0.2
+    elif "ผสมสแลก" in binder_type:
+        c = total_binder * 0.6
+        s = total_binder * 0.4
+        
+    # คำนวณมวลรวม (สมมติ Unit Weight 2350 kg/m3)
+    sp = 5.0
+    agg_weight = 2350 - (total_binder + water_content + sp)
+    ca = agg_weight * 0.60 # หิน 60%
+    fa = agg_weight * 0.40 # ทราย 40%
     
-    agg_weight = 2350 - (total_binder + water + 5)
-    ca = agg_weight * 0.60
-    fa = agg_weight * 0.40
-    return c, s, f, water, 5.0, ca, fa, 28
+    return c, s, f, water_content, sp, ca, fa, 28
 
 # -------------------------------------------
-# Sidebar (Switch Mode)
+# 4. Sidebar Input
 # -------------------------------------------
 with st.sidebar:
-    st.title("เมนูหลัก")
-    try: st.image("image_19.png", width=150)
+    st.title("กำหนดค่าพารามิเตอร์")
+    try: st.image(Image.open("image_19.png"), width=150)
     except: pass
-    
-    # 1. เพิ่มปุ่มเลือกโหมด
-    app_mode = st.radio("โหมดการทำงาน:", ["1. ทำนาย (Predict)", "2. ออกแบบ (Auto-Design)"])
     st.markdown("---")
     
-    c, s, f, w, sp, ca, fa, age = 0,0,0,0,0,0,0,28
+    # [ส่วนที่เพิ่มใหม่] ปุ่มเลือกโหมดการทำงาน
+    app_mode = st.radio("เลือกโหมดการทำงาน:", 
+                        ["1. ทำนายกำลังอัด (Predict)", 
+                         "2. ออกแบบส่วนผสม (Auto-Design)"])
+    st.markdown("---")
     
-    if app_mode == "1. ทำนาย (Predict)":
-        st.header("กรอกปริมาณวัสดุ")
-        c = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
-        s = st.number_input("สแลก", 0.0, 1000.0, 0.0)
-        f = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
-        w = st.number_input("น้ำ", 0.0, 500.0, 180.0)
-        sp = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
-        ca = st.number_input("หิน", 0.0, 2000.0, 1000.0)
-        fa = st.number_input("ทราย", 0.0, 2000.0, 800.0)
+    # ค่าเริ่มต้นตัวแปร
+    cement, slag, flyash, water, superplastic, coarse, fine, age = 0,0,0,0,0,0,0,28
+    
+    if app_mode == "1. ทำนายกำลังอัด (Predict)":
+        # (ส่วนเดิมของคุณ - ไม่เปลี่ยนแปลง)
+        cement = st.number_input("ปูนซีเมนต์", 0.0, 1000.0, 350.0)
+        slag = st.number_input("สแลก", 0.0, 1000.0, 0.0)
+        flyash = st.number_input("เถ้าลอย", 0.0, 1000.0, 0.0)
+        water = st.number_input("น้ำ", 0.0, 500.0, 180.0)
+        superplastic = st.number_input("สารลดน้ำ", 0.0, 100.0, 0.0)
+        coarse = st.number_input("หิน", 0.0, 2000.0, 1000.0)
+        fine = st.number_input("ทราย", 0.0, 2000.0, 800.0)
         age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
-        if st.button(" คำนวณ", type="primary"): st.session_state['calculated'] = True
-            
-    else: # โหมดออกแบบ
-        st.header("เป้าหมาย")
-        target_ksc = st.number_input("กำลังอัดที่ต้องการ (ksc)", 100.0, 800.0, 350.0)
-        binder_opt = st.selectbox("สูตรผสม:", ["ปูนซีเมนต์ล้วน (OPC)", "ผสมเถ้าลอย (Fly Ash 20%)", "ผสมสแลก (Slag 40%)"])
-        if st.button(" ออกแบบส่วนผสม", type="primary"):
+        
+        if st.button(" คำนวณกำลังอัด", type="primary"):
             st.session_state['calculated'] = True
-            c, s, f, w, sp, ca, fa, age = auto_design_mix(target_ksc, binder_opt)
-            st.session_state['design_res'] = (c, s, f, w, sp, ca, fa, age, target_ksc, binder_opt)
+            
+    else: # โหมด Auto-Design (ส่วนที่เพิ่มใหม่)
+        st.header("ระบุความต้องการ")
+        target_ksc = st.number_input("กำลังอัดที่ต้องการ (ksc)", 100.0, 800.0, 350.0)
+        binder_opt = st.selectbox("สูตรผสม:", 
+                                  ["ปูนซีเมนต์ล้วน (OPC)", 
+                                   "ผสมเถ้าลอย (Fly Ash 20%)", 
+                                   "ผสมสแลก (Slag 40%)"])
+        
+        if st.button("✨ คำนวณสูตรผสม", type="primary"):
+            st.session_state['calculated'] = True
+            # คำนวณและเก็บค่าเข้าตัวแปรเดียวกัน
+            cement, slag, flyash, water, superplastic, coarse, fine, age = auto_design_mix(target_ksc, binder_opt)
+            # บันทึกผลไว้แสดงข้อความ
+            st.session_state['design_info'] = (target_ksc, binder_opt)
+            # บันทึกค่าที่คำนวณได้ลง session เพื่อให้คงอยู่เมื่อ Rerun
+            st.session_state['auto_values'] = (cement, slag, flyash, water, superplastic, coarse, fine, age)
 
     st.markdown("---")
-    enable_val = st.checkbox("Validation Mode")
-    act_ksc = st.number_input("Lab Result (ksc)", 0.0) if enable_val else 0.0
+    st.markdown("###  เปรียบเทียบผลทดสอบจริง")
+    enable_validation = st.checkbox("เปิดโหมด Validation")
+    actual_ksc = 0.0
+    if enable_validation:
+        actual_ksc = st.number_input("กรอกค่ากำลังอัดจริงจาก Lab (ksc):", min_value=0.0, value=0.0)
 
 # -------------------------------------------
-# Main Content
+# 5. Main Content
 # -------------------------------------------
-st.title("🏗️ ระบบทำนายกำลังอัดคอนกรีต (AI)")
+st.title(" ระบบทำนายกำลังอัดคอนกรีต (AI)")
 st.markdown(f"**สถานะ:** {model_status}")
 st.markdown("---")
 
 if st.session_state['calculated']:
     
-    # ถ้ามาจาก Auto-Design ให้ดึงค่าที่คำนวณไว้มาแสดง
-    if app_mode == "2. ออกแบบ (Auto-Design)" and 'design_res' in st.session_state:
-        c, s, f, w, sp, ca, fa, age, target_ksc, binder_opt = st.session_state['design_res']
-        st.markdown(f"""<div class="design-box"><h3> ผลการออกแบบ (Auto-Design)</h3>เป้าหมาย: <b>{target_ksc:.0f} ksc</b> | สูตร: <b>{binder_opt}</b></div>""", unsafe_allow_html=True)
+    # ถ้ามาจาก Auto-Design ให้ดึงค่าที่คำนวณได้มาใช้
+    if app_mode == "2. ออกแบบส่วนผสม (Auto-Design)" and 'auto_values' in st.session_state:
+        cement, slag, flyash, water, superplastic, coarse, fine, age = st.session_state['auto_values']
+        tgt, b_opt = st.session_state.get('design_info', (0, "-"))
+        
+        st.markdown(f"""
+        <div class="design-box">
+            <h3> ผลการออกแบบส่วนผสม (Auto-Design)</h3>
+            <p>เป้าหมาย: <b>{tgt:.0f} ksc</b> | สูตร: <b>{b_opt}</b></p>
+            <p><i>*ระบบคำนวณย้อนกลับและกำหนดสัดส่วนให้โดยอัตโนมัติ</i></p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    input_data = pd.DataFrame([[c, s, f, w, sp, ca, fa, age]], columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
+    # 1. Prediction (Base = Cylinder) - ใช้ตัวแปร cement, slag ฯลฯ เหมือนเดิมเป๊ะ
+    input_data = pd.DataFrame([[cement, slag, flyash, water, superplastic, coarse, fine, age]],
+                              columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 
+                                       'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
     
-    base_ksc = model.predict(input_data)[0] * 10.197
-    cost = (c*2.5 + s*1.5 + f*1.0 + w*0.015 + sp*40 + ca*0.35 + fa*0.30)
+    base_mpa = model.predict(input_data)[0]
+    base_ksc = base_mpa * 10.197 # Cylinder Strength
     
+    cost_total = (cement*2.5 + slag*1.5 + flyash*1.0 + water*0.015 + superplastic*40 + coarse*0.35 + fine*0.30)
+    
+    # 2. Main Layout
     c1, c2 = st.columns([1, 1])
+    
     with c2:
-        st.markdown("#####  เลือกรูปแบบตัวอย่าง")
-        shape = st.radio("", ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], label_visibility="collapsed")
+        # --- เลือกรูปทรงและปรับค่า Strength ---
+        st.markdown("#####  เลือกรูปแบบตัวอย่าง (Sample Type)")
+        shape_opt = st.radio("", 
+                             ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], 
+                             horizontal=False, label_visibility="collapsed")
         
-        fac = 1.2 if "ลูกบาศก์" in shape else 1.0
-        final_ksc = base_ksc * fac
+        # ปรับค่า Strength ตามรูปทรง (Conversion Factor)
+        correction_factor = 1.0
+        if "ลูกบาศก์" in shape_opt:
+            correction_factor = 1.20 # Cube แข็งกว่า Cylinder ~20%
+            st.info("ℹ️ หมายเหตุ: แปลงค่าจาก Cylinder เป็น Cube (x1.20) ตามมาตรฐานวิศวกรรม")
+            
+        final_ksc = base_ksc * correction_factor
         
-        st.plotly_chart(plot_3d_sample(final_ksc, shape), use_container_width=True)
+        # แสดง 3D (สีปรับใหม่ให้เหมือนรูปจริง)
+        st.plotly_chart(plot_3d_sample(final_ksc, shape_opt), use_container_width=True)
         
-        pdf_bytes = create_official_pdf(input_data.iloc[0], final_ksc, shape)
-        st.download_button("📄 พิมพ์รายงาน (แบบ บ.216)", pdf_bytes, "official_report.pdf", "application/pdf", type="primary")
+        # Download
+        b_ex = io.BytesIO()
+        with pd.ExcelWriter(b_ex, engine='xlsxwriter') as w:
+            pd.DataFrame({'Result': [final_ksc]}).to_excel(w)
+        pdf_dat = create_pdf(input_data.iloc[0], {'ksc': final_ksc}, cost_total, shape_opt)
+        
+        col_d1, col_d2 = st.columns(2)
+        col_d1.download_button("📥 Excel", b_ex, "res.xlsx")
+        col_d2.download_button("📄 PDF", pdf_dat, "rep.pdf", "application/pdf")
 
     with c1:
-        st.subheader("ผลการวิเคราะห์ (AI)")
-        fig_g = go.Figure(go.Indicator(mode="gauge+number", value=final_ksc, title={'text':"ksc"}, gauge={'axis':{'range':[None,1200]}, 'bar':{'color':"#2c3e50"}}))
-        fig_g.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20)); st.plotly_chart(fig_g, use_container_width=True)
+        st.subheader("ผลการทำนาย")
+        # แสดงค่าที่ปรับแก้แล้ว (final_ksc)
+        fig_g = go.Figure(go.Indicator(
+            mode = "gauge+number", value = final_ksc,
+            title = {'text': "กำลังอัด (ksc)", 'font': {'size': 24}},
+            gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, 
+                     'steps': [{'range': [0, 180], 'color': '#ff4b4b'}, {'range': [280, 450], 'color': '#21c354'}],
+                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': final_ksc}}
+        ))
+        fig_g.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
+        st.plotly_chart(fig_g, use_container_width=True)
         
-        total_binder = c + s + f
-        wb_ratio = w / total_binder if total_binder > 0 else 0
-        if wb_ratio > 0.5: st.warning(f"⚠️ w/b = {wb_ratio:.3f} (>0.5)")
-        else: st.success(f"✅ w/b = {wb_ratio:.3f}")
+        # =========================================================
+        # ✅ กลับมาใช้ w/b ratio ตามเดิม
+        # =========================================================
+        st.markdown("##### ✅ ตรวจสอบมาตรฐาน (ACI)")
+        
+        total_binder = cement + slag + flyash
+        if total_binder > 0:
+            wb_ratio = water / total_binder
+        else:
+            wb_ratio = 0
+            
+        if wb_ratio > 0.5: 
+            st.warning(f"⚠️ w/b = {wb_ratio:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
+        else: 
+            st.success(f"✅ w/b = {wb_ratio:.2f} ผ่านเกณฑ์")
 
-    if enable_val and act_ksc > 0:
-        err = abs(act_ksc - final_ksc)/act_ksc * 100
-        st.markdown(f"""<div class="validation-box"><h3> ผลการเทียบ Lab</h3>ค่าพยากรณ์: <b>{final_ksc:.2f}</b> vs ค่าจริง: <b>{act_ksc:.2f}</b> (Error: {err:.2f}%)</div>""", unsafe_allow_html=True)
+    # --- Validation Section ---
+    if enable_validation and actual_ksc > 0:
+        error_val = abs(actual_ksc - final_ksc)
+        error_percent = (error_val / actual_ksc) * 100
+        
+        st.markdown(f"""
+        <div class="validation-box">
+            <h3> ผลการตรวจสอบความแม่นยำ (Validation Result)</h3>
+            <p>เทียบกับตัวอย่างแบบ: <b>{shape_opt}</b></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        v1, v2, v3 = st.columns(3)
+        v1.metric("ค่าพยากรณ์ (AI)", f"{final_ksc:.2f} ksc")
+        v2.metric("ค่าจริง (Lab)", f"{actual_ksc:.2f} ksc")
+        v3.metric("ความคลาดเคลื่อน", f"{error_percent:.2f}%", delta_color="inverse" if error_percent > 10 else "normal")
+        
+        comp_df = pd.DataFrame({'Type': ['AI Prediction', 'Lab Result'], 'Strength (ksc)': [final_ksc, actual_ksc]})
+        fig_comp = go.Figure([go.Bar(x=comp_df['Type'], y=comp_df['Strength (ksc)'], marker_color=['#3498db', '#e74c3c'], text=comp_df['Strength (ksc)'], textposition='auto')])
+        fig_comp.update_layout(title="เปรียบเทียบ AI vs Lab", height=300)
+        st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("---")
-    r1, r2 = st.columns(2)
-    with r1: st.plotly_chart(plot_stress_strain(final_ksc), use_container_width=True)
-    with r2: st.bar_chart(pd.DataFrame({"วัสดุ":["ปูน","สแลก","เถ้า","น้ำ","สาร","หิน","ทราย"], "ปริมาณ":[c,s,f,w,sp,ca,fa]}).set_index("วัสดุ"))
     
+    # Graphs
+    r2_c1, r2_c2 = st.columns(2)
+    with r2_c1: st.plotly_chart(plot_stress_strain(final_ksc), use_container_width=True)
+    with r2_c2:
+        df_mix = pd.DataFrame({"Item": ["Cement", "Slag", "FlyAsh", "Water", "SP", "Coarse", "Fine"], "Qty": [cement, slag, flyash, water, superplastic, coarse, fine]})
+        st.bar_chart(df_mix.set_index("Item"))
+
     st.markdown("---")
-    s1, s2 = st.columns(2)
-    with s1: 
-        tv = st.selectbox("Sensitivity:", ["Cement", "Water", "Age"])
-        mv = {"Cement":"Cement", "Water":"Water", "Age":"Age"}
-        st.plotly_chart(plot_sens(model, input_data, mv[tv], tv), use_container_width=True)
-    with s2:
-        st.metric("ราคาประเมิน (บาท/ลบ.ม.)", f"{cost:,.2f}")
-        cost_df = pd.DataFrame({'Mat':['Cement','Slag','FlyAsh','Water','SP','Rock','Sand'], 'Cost':[c*2.5, s*1.5, f*1.0, w*0.015, sp*40, ca*0.35, fa*0.30]})
+    with st.expander("📝 รายการคำนวณ (Calculation Sheet)"):
+        st.latex(rf"Binder = {cement} + {slag} + {flyash} = {total_binder} \; kg/m^3")
+        st.latex(rf"w/b = \frac{{Water}}{{Binder}} = \frac{{{water}}}{{{total_binder}}} = \mathbf{{{wb_ratio:.3f}}}")
+        st.latex(rf"Raw Strength (Cyl) = {base_ksc:.2f} \; ksc")
+        st.latex(rf"Shape Factor = \times {correction_factor}")
+        st.latex(rf"Final Strength = {final_ksc:.2f} \; ksc")
+
+    st.markdown("### 🔍 วิเคราะห์แนวโน้ม & ราคา")
+    sens_c1, sens_c2 = st.columns(2)
+    with sens_c1:
+        t_var = st.selectbox("ปัจจัย:", ["ปูนซีเมนต์", "น้ำ", "อายุบ่ม"])
+        m_var = {"ปูนซีเมนต์":"Cement", "น้ำ":"Water", "อายุบ่ม":"Age"}
+        st.plotly_chart(plot_sensitivity(model, input_data, m_var[t_var], t_var), use_container_width=True)
+    with sens_c2:
+        st.metric("ราคาประเมิน (บาท/ลบ.ม.)", f"{cost_total:,.2f}")
+        cost_df = pd.DataFrame({'Mat':['Cement','Slag','FlyAsh','Water','SP','Rock','Sand'], 'Cost':[cement*2.5, slag*1.5, flyash*1.0, water*0.015, superplastic*40, coarse*0.35, fine*0.30]})
         fig_pie = go.Figure(data=[go.Pie(labels=cost_df['Mat'], values=cost_df['Cost'], hole=.4)])
         fig_pie.update_layout(height=300, margin=dict(t=0,b=0,l=0,r=0))
         st.plotly_chart(fig_pie, use_container_width=True)
 
 else:
-    st.info("👈 กรุณาเลือกโหมดและกดปุ่มคำนวณ")
+    st.info("👈 กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
