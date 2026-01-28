@@ -40,7 +40,7 @@ class PDF(FPDF):
         self.cell(0, 5, 'FERROCRETE   216   ไม่ผสมหิน', 0, 1, 'R')
         self.ln(5)
         
-        try: self.set_font('THSarabunNew', '', 22) # ใช้ตัวธรรมดาแต่ขนาดใหญ่แทนตัวหนา
+        try: self.set_font('THSarabunNew', '', 22)
         except: self.set_font('Arial', 'B', 16)
         self.cell(0, 10, 'สำนักวิเคราะห์และตรวจสอบ กรมทางหลวง', 0, 1, 'C')
         self.ln(5)
@@ -62,7 +62,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     pdf.set_font(font, '', 14)
     lh = 7
     
-    # Header Info
     pdf.cell(30, lh, "อันดับทดลองที่:", 0, 0); pdf.cell(60, lh, "CO - 129/2567 (AI Sim)", "B", 0)
     pdf.cell(30, lh, "วันที่รับตัวอย่าง:", 0, 0); pdf.cell(70, lh, f"{time.strftime('%d/%m/%Y')}", "B", 1)
     
@@ -76,7 +75,6 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     pdf.set_font(font, '', 18)
     pdf.cell(0, 10, "รายงานการทดลองแรงอัดของแท่งคอนกรีต", 0, 1, 'C')
 
-    # Table
     pdf.set_font(font, '', 12)
     col_w = [10, 10, 40, 15, 25, 20, 25, 25]
     row_h = 8
@@ -106,9 +104,8 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     pdf.cell(col_w[7], row_h, f"{pred_ksc:.1f}", 1, 1, 'R')
     pdf.ln(10)
 
-    # Footer (Signatures - No Stamp)
     pdf.set_font(font, '', 14)
-    pdf.ln(20) # เว้นที่ว่างแทนตราประทับ
+    pdf.ln(20) 
     
     y_sig = pdf.get_y()
     pdf.set_font(font, '', 12)
@@ -128,7 +125,7 @@ def create_official_pdf(inputs, pred_ksc, sample_type):
     return pdf.output(dest='S').encode('latin-1')
 
 # -------------------------------------------
-# กราฟและ 3D
+# กราฟและ 3D Simulation
 # -------------------------------------------
 def plot_3d_sample(ksc, shape_type):
     fig = go.Figure()
@@ -162,7 +159,7 @@ def plot_sens(model, base, col, name):
     except: return go.Figure()
 
 # -------------------------------------------
-# Logic ออกแบบส่วนผสม (Auto-Design)
+# [NEW] Logic ออกแบบส่วนผสม (Auto-Design)
 # -------------------------------------------
 def auto_design_mix(target_ksc, binder_type):
     target_mpa = target_ksc / 10.197
@@ -181,13 +178,14 @@ def auto_design_mix(target_ksc, binder_type):
     return c, s, f, water, 5.0, ca, fa, 28
 
 # -------------------------------------------
-# Sidebar
+# Sidebar (Switch Mode)
 # -------------------------------------------
 with st.sidebar:
     st.title("เมนูหลัก")
     try: st.image("image_19.png", width=150)
     except: pass
     
+    # 1. เพิ่มปุ่มเลือกโหมด
     app_mode = st.radio("โหมดการทำงาน:", ["1. ทำนาย (Predict)", "2. ออกแบบ (Auto-Design)"])
     st.markdown("---")
     
@@ -205,11 +203,11 @@ with st.sidebar:
         age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
         if st.button(" คำนวณ", type="primary"): st.session_state['calculated'] = True
             
-    else:
+    else: # โหมดออกแบบ
         st.header("เป้าหมาย")
         target_ksc = st.number_input("กำลังอัดที่ต้องการ (ksc)", 100.0, 800.0, 350.0)
         binder_opt = st.selectbox("สูตรผสม:", ["ปูนซีเมนต์ล้วน (OPC)", "ผสมเถ้าลอย (Fly Ash 20%)", "ผสมสแลก (Slag 40%)"])
-        if st.button("✨ ออกแบบส่วนผสม", type="primary"):
+        if st.button(" ออกแบบส่วนผสม", type="primary"):
             st.session_state['calculated'] = True
             c, s, f, w, sp, ca, fa, age = auto_design_mix(target_ksc, binder_opt)
             st.session_state['design_res'] = (c, s, f, w, sp, ca, fa, age, target_ksc, binder_opt)
@@ -221,13 +219,13 @@ with st.sidebar:
 # -------------------------------------------
 # Main Content
 # -------------------------------------------
-st.title(" ระบบทำนายกำลังอัดคอนกรีต (AI)")
+st.title("🏗️ ระบบทำนายกำลังอัดคอนกรีต (AI)")
 st.markdown(f"**สถานะ:** {model_status}")
 st.markdown("---")
 
 if st.session_state['calculated']:
     
-    # ถ้ามาจาก Auto-Design ให้ดึงค่าที่คำนวณไว้
+    # ถ้ามาจาก Auto-Design ให้ดึงค่าที่คำนวณไว้มาแสดง
     if app_mode == "2. ออกแบบ (Auto-Design)" and 'design_res' in st.session_state:
         c, s, f, w, sp, ca, fa, age, target_ksc, binder_opt = st.session_state['design_res']
         st.markdown(f"""<div class="design-box"><h3> ผลการออกแบบ (Auto-Design)</h3>เป้าหมาย: <b>{target_ksc:.0f} ksc</b> | สูตร: <b>{binder_opt}</b></div>""", unsafe_allow_html=True)
@@ -235,8 +233,6 @@ if st.session_state['calculated']:
     input_data = pd.DataFrame([[c, s, f, w, sp, ca, fa, age]], columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
     
     base_ksc = model.predict(input_data)[0] * 10.197
-    
-    # ✅ แก้ NameError: ใช้ตัวแปร c, s, f แทน cement, slag...
     cost = (c*2.5 + s*1.5 + f*1.0 + w*0.015 + sp*40 + ca*0.35 + fa*0.30)
     
     c1, c2 = st.columns([1, 1])
@@ -264,7 +260,7 @@ if st.session_state['calculated']:
 
     if enable_val and act_ksc > 0:
         err = abs(act_ksc - final_ksc)/act_ksc * 100
-        st.markdown(f"""<div class="validation-box"><h3>🧪 ผลการเทียบ Lab</h3>ค่าพยากรณ์: <b>{final_ksc:.2f}</b> vs ค่าจริง: <b>{act_ksc:.2f}</b> (Error: {err:.2f}%)</div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class="validation-box"><h3> ผลการเทียบ Lab</h3>ค่าพยากรณ์: <b>{final_ksc:.2f}</b> vs ค่าจริง: <b>{act_ksc:.2f}</b> (Error: {err:.2f}%)</div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     r1, r2 = st.columns(2)
