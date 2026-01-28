@@ -13,7 +13,7 @@ from fpdf import FPDF
 # -------------------------------------------
 st.set_page_config(
     page_title="ระบบทำนายกำลังอัดคอนกรีต/ดินซีเมนต์",
-    page_icon="🏗️",
+    page_icon="👷🏻‍♂️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -45,7 +45,6 @@ st.markdown("""
     }
     div.stButton > button:hover { background-color: #34495e; transform: scale(1.02); }
     
-    /* กรอบ Validation */
     .validation-box {
         background-color: #e8f5e9;
         padding: 15px;
@@ -57,7 +56,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # -------------------------------------------
-# ฟังก์ชัน PDF และกราฟต่างๆ (เหมือนเดิม)
+# ฟังก์ชัน PDF และกราฟ
 # -------------------------------------------
 class PDF(FPDF):
     def header(self):
@@ -138,10 +137,7 @@ def plot_3d_sample(ksc, shape_type):
         x = r_cyl * np.cos(theta_grid)
         y = r_cyl * np.sin(theta_grid)
         fig.add_trace(go.Surface(x=x, y=y, z=z_grid, colorscale=[[0, base_color], [1, base_color]], showscale=False, opacity=1.0))
-        
-        # Caps code omitted for brevity but assumed similar to previous
-        # (Simplified for display)
-        fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[h_cyl], mode='markers', marker=dict(size=1, color=cap_color)))
+        fig.add_trace(go.Scatter3d(x=[0], y=[0], z=[h_cyl], mode='markers', marker=dict(size=1, color=cap_color))) # Dummy Cap
 
     elif "ลูกบาศก์" in shape_type: 
         fig.add_trace(go.Mesh3d(
@@ -208,14 +204,12 @@ with st.sidebar:
     fine = st.number_input("ทราย", 0.0, 2000.0, 800.0)
     age = st.slider("อายุบ่ม (วัน)", 1, 365, 28)
     
-    if st.button("คำนวณกำลังอัด", type="primary"):
+    if st.button(" คำนวณกำลังอัด", type="primary"):
         st.session_state['calculated'] = True
     
-    # --- [NEW] Validation Section ---
     st.markdown("---")
-    st.markdown("### เปรียบเทียบผลทดสอบจริง")
+    st.markdown("###  เปรียบเทียบผลทดสอบจริง")
     enable_validation = st.checkbox("เปิดโหมด Validation")
-    
     actual_ksc = 0.0
     if enable_validation:
         actual_ksc = st.number_input("กรอกค่ากำลังอัดจริงจาก Lab (ksc):", min_value=0.0, value=0.0)
@@ -229,85 +223,104 @@ st.markdown("---")
 
 if st.session_state['calculated']:
     
+    # 1. Prediction (Base = Cylinder)
     input_data = pd.DataFrame([[cement, slag, flyash, water, superplastic, coarse, fine, age]],
                               columns=['Cement', 'Blast Furnace Slag', 'Fly Ash', 'Water', 
                                        'Superplasticizer', 'Coarse Aggregate', 'Fine Aggregate', 'Age'])
     
-    pred_mpa = model.predict(input_data)[0]
-    pred_ksc = pred_mpa * 10.197
+    base_mpa = model.predict(input_data)[0]
+    base_ksc = base_mpa * 10.197 # Cylinder Strength
     
     cost_total = (cement*2.5 + slag*1.5 + flyash*1.0 + water*0.015 + superplastic*40 + coarse*0.35 + fine*0.30)
     
-    # --- ส่วนแสดงผล Validation (ถ้าเปิดใช้งาน) ---
-    if enable_validation and actual_ksc > 0:
-        error_val = abs(actual_ksc - pred_ksc)
-        error_percent = (error_val / actual_ksc) * 100
-        
-        st.markdown(f"""
-        <div class="validation-box">
-            <h3> ผลการตรวจสอบความแม่นยำ (Validation Result)</h3>
-            <p>เปรียบเทียบค่าที่ AI ทำนาย กับ ค่าที่ได้จากการกดตัวอย่างจริงในห้อง Lab</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        v1, v2, v3 = st.columns(3)
-        v1.metric("ค่าพยากรณ์ (AI)", f"{pred_ksc:.2f} ksc")
-        v2.metric("ค่าจริง (Lab)", f"{actual_ksc:.2f} ksc")
-        v3.metric("ความคลาดเคลื่อน (Error)", f"{error_percent:.2f}%", 
-                  delta_color="inverse" if error_percent > 10 else "normal") # ถ้า Error เกิน 10% ให้เป็นสีแดง
-                  
-        # Graph Comparison
-        comp_df = pd.DataFrame({'Type': ['AI Prediction', 'Lab Result'], 'Strength (ksc)': [pred_ksc, actual_ksc]})
-        fig_comp = go.Figure([go.Bar(x=comp_df['Type'], y=comp_df['Strength (ksc)'], 
-                                     marker_color=['#3498db', '#e74c3c'], text=comp_df['Strength (ksc)'], textposition='auto')])
-        fig_comp.update_layout(title="เปรียบเทียบ AI vs Lab", height=300)
-        st.plotly_chart(fig_comp, use_container_width=True)
-        st.markdown("---")
-
-    # --- Layout Grid ปกติ ---
+    # 2. Main Layout
     c1, c2 = st.columns([1, 1])
     
+    with c2:
+        # --- [Logic ใหม่] เลือกรูปทรงและปรับค่า Strength ---
+        st.markdown("#####  เลือกรูปแบบตัวอย่าง (Sample Type)")
+        shape_opt = st.radio("", 
+                             ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], 
+                             horizontal=False, label_visibility="collapsed")
+        
+        # ปรับค่า Strength ตามรูปทรง (Conversion Factor)
+        correction_factor = 1.0
+        if "ลูกบาศก์" in shape_opt:
+            correction_factor = 1.20 # Cube แข็งกว่า Cylinder ~20%
+            st.info(" หมายเหตุ: แปลงค่าจาก Cylinder เป็น Cube (x1.20) ตามมาตรฐานวิศวกรรม")
+            
+        final_ksc = base_ksc * correction_factor
+        
+        # แสดง 3D
+        st.plotly_chart(plot_3d_sample(final_ksc, shape_opt), use_container_width=True)
+        
+        # Download
+        b_ex = io.BytesIO()
+        with pd.ExcelWriter(b_ex, engine='xlsxwriter') as w:
+            pd.DataFrame({'Result': [final_ksc]}).to_excel(w)
+        pdf_dat = create_pdf(input_data.iloc[0], {'ksc': final_ksc}, cost_total, shape_opt)
+        
+        col_d1, col_d2 = st.columns(2)
+        col_d1.download_button("📥 Excel", b_ex, "res.xlsx")
+        col_d2.download_button("📄 PDF", pdf_dat, "rep.pdf", "application/pdf")
+
     with c1:
         st.subheader("ผลการทำนาย")
-        # Gauge
+        # แสดงค่าที่ปรับแก้แล้ว (final_ksc)
         fig_g = go.Figure(go.Indicator(
-            mode = "gauge+number", value = pred_ksc,
+            mode = "gauge+number", value = final_ksc,
             title = {'text': "กำลังอัด (ksc)", 'font': {'size': 24}},
-            gauge = {'axis': {'range': [None, 1000]}, 'bar': {'color': "#2c3e50"},
+            gauge = {'axis': {'range': [None, 1200]}, 'bar': {'color': "#2c3e50"}, # เพิ่ม Range เผื่อ Cube
                      'steps': [{'range': [0, 180], 'color': '#ff4b4b'}, {'range': [280, 450], 'color': '#21c354'}],
-                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': pred_ksc}}
+                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': final_ksc}}
         ))
         fig_g.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
         st.plotly_chart(fig_g, use_container_width=True)
         
         st.markdown("##### ✅ ตรวจสอบมาตรฐาน (ACI)")
         wb = water/(cement+slag+flyash) if (cement+slag+flyash)>0 else 0
-        if wb > 0.5: st.warning(f"⚠️ w/c = {wb:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
+        if w/c > 0.5: st.warning(f"⚠️ w/c = {wb:.2f} (>0.5) ไม่เหมาะกับงานภายนอก")
         else: st.success(f"✅ w/c = {wb:.2f} ผ่านเกณฑ์")
 
-    with c2:
-        shape_opt = st.radio("เลือกรูปแบบตัวอย่าง (Sample Type):", ["ก้อนดินซีเมนต์ (ทรงกระบอก)", "คอนกรีต (ลูกบาศก์)", "คอนกรีต (ทรงกระบอก)"], horizontal=True)
-        st.plotly_chart(plot_3d_sample(pred_ksc, shape_opt), use_container_width=True)
+    # --- Validation Section (ใช้ final_ksc เทียบ) ---
+    if enable_validation and actual_ksc > 0:
+        error_val = abs(actual_ksc - final_ksc)
+        error_percent = (error_val / actual_ksc) * 100
         
-        b_ex = io.BytesIO()
-        with pd.ExcelWriter(b_ex, engine='xlsxwriter') as w:
-            pd.DataFrame({'Result': [pred_ksc]}).to_excel(w)
-        pdf_dat = create_pdf(input_data.iloc[0], {'ksc': pred_ksc}, cost_total, shape_opt)
+        st.markdown(f"""
+        <div class="validation-box">
+            <h3> ผลการตรวจสอบความแม่นยำ (Validation Result)</h3>
+            <p>เทียบกับตัวอย่างแบบ: <b>{shape_opt}</b></p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        col_d1, col_d2 = st.columns(2)
-        col_d1.download_button("📥 Excel", b_ex, "res.xlsx")
-        col_d2.download_button("📄 PDF", pdf_dat, "rep.pdf", "application/pdf")
+        v1, v2, v3 = st.columns(3)
+        v1.metric("ค่าพยากรณ์ (AI)", f"{final_ksc:.2f} ksc")
+        v2.metric("ค่าจริง (Lab)", f"{actual_ksc:.2f} ksc")
+        v3.metric("ความคลาดเคลื่อน", f"{error_percent:.2f}%", delta_color="inverse" if error_percent > 10 else "normal")
+        
+        comp_df = pd.DataFrame({'Type': ['AI Prediction', 'Lab Result'], 'Strength (ksc)': [final_ksc, actual_ksc]})
+        fig_comp = go.Figure([go.Bar(x=comp_df['Type'], y=comp_df['Strength (ksc)'], marker_color=['#3498db', '#e74c3c'], text=comp_df['Strength (ksc)'], textposition='auto')])
+        fig_comp.update_layout(title="เปรียบเทียบ AI vs Lab", height=300)
+        st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("---")
     
-    # Row 2 & 3 (กราฟอื่นๆ คงเดิม)
+    # Graphs (ใช้ final_ksc)
     r2_c1, r2_c2 = st.columns(2)
-    with r2_c1: st.plotly_chart(plot_stress_strain(pred_ksc), use_container_width=True)
+    with r2_c1: st.plotly_chart(plot_stress_strain(final_ksc), use_container_width=True)
     with r2_c2:
         df_mix = pd.DataFrame({"Item": ["Cement", "Slag", "FlyAsh", "Water", "SP", "Coarse", "Fine"], "Qty": [cement, slag, flyash, water, superplastic, coarse, fine]})
         st.bar_chart(df_mix.set_index("Item"))
 
     st.markdown("---")
+    with st.expander("📝 รายการคำนวณ (Calculation Sheet)"):
+        st.latex(rf"Binder = {cement+slag+flyash} \; kg/m^3")
+        st.latex(rf"w/b = {wb:.3f}")
+        st.latex(rf"Raw Strength (Cyl) = {base_ksc:.2f} \; ksc")
+        st.latex(rf"Shape Factor = \times {correction_factor}")
+        st.latex(rf"Final Strength = {final_ksc:.2f} \; ksc")
+
     st.markdown("### 🔍 วิเคราะห์แนวโน้ม & ราคา")
     sens_c1, sens_c2 = st.columns(2)
     with sens_c1:
@@ -322,4 +335,4 @@ if st.session_state['calculated']:
         st.plotly_chart(fig_pie, use_container_width=True)
 
 else:
-    st.info("👈 กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
+    st.info(" กรุณากดปุ่มคำนวณเพื่อเริ่มใช้งาน")
